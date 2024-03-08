@@ -4,7 +4,7 @@ title: About
 
 Hi there👋
 
-I'm **Guo Ruyi**, use the *qingwave* as my network id, there are some situation of mine.
+I'm **Stallone**, use the *Lucky* as my network id, there are some situation of mine.
 
 - 🔭 I'm working on CloudNative, Kubernetes, Prometheus...
 - 📫 Reach me Here, [Github](https://github.com/qingwave), [JueJin](https://juejin.cn/user/2576910988872951), [RSS](/rss.xml) or [Email](mailto:isguory@gmail.com)

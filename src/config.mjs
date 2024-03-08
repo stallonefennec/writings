@@ -1,12 +1,12 @@
 const CONFIG = {
-  name: 'Qingwave',
+  name: 'Stallone',
 
-  origin: 'https://qingwave.github.io',
+  origin: 'https://Stallonefennec.github.io',
   basePathname: '',
   trailingSlash: false,
 
-  title: 'Qingwave',
-  description: "Qingwave's Blog.",
+  title: 'Stallone',
+  description: "Stallone's Blog.",
   defaultImage: '',
 
   defaultTheme: 'light', // Values: "system" | "light" | "dark" | "light:only" | "dark:only"
