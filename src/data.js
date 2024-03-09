@@ -51,7 +51,7 @@ export const footerData = {
   footNote: `
     <span class="w-5 h-5 md:-mt-0.5 bg-cover mr-1.5 float-left rounded-sm bg-[url(/favicon.ico)]"></span>
     <span class="text-slate-700 dark:text-slate-300">
-    <a class="hover:brightness-50" href="https://qingwave.github.io"> Qingwave</a> · All rights reserved.</span>
+    <a class="hover:brightness-50" href="https://stallonefennec.github.io">Stallone</a> · All rights reserved.</span>
   `,
 };
 

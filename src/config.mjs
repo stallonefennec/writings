@@ -9,7 +9,7 @@ const CONFIG = {
   description: "Stallone's Blog.",
   defaultImage: '',
 
-  defaultTheme: 'light', // Values: "system" | "light" | "dark" | "light:only" | "dark:only"
+  defaultTheme: 'dark', // Values: "system" | "light" | "dark" | "light:only" | "dark:only"
 
   language: 'zh',
   textDirection: 'ltr',
