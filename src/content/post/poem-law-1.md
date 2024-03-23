@@ -2,12 +2,12 @@
 title: 《民法典》对物业服务合同的规定解析
 
 tags:
-  - 部门政策
-date: 2024-01-24
+  - 相关法条
+date: 2024-03-24
 category: 管理办法
 ---
 
-# 《民法典》对物业服务合同的规定解析
+## 《民法典》对物业服务合同的规定解析
 
 2021-12-02
 
@@ -113,7 +113,7 @@ category: 管理办法
 
 
 
-微信图片_20211202213637.png
+![](https://www.dehenglaw.com/ueditor/net/upload/image/20211202/6377407800113538716546329.png)
 
 
 
@@ -226,7 +226,7 @@ category: 管理办法
 
 
 
-微信图片_20211202213642.png
+![](https://www.dehenglaw.com/ueditor/net/upload/image/20211202/6377407803607618196787513.png)
 
 
 
