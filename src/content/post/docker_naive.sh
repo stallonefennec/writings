@@ -1,7 +1,7 @@
 #!/bin/bash
-sudo apt-get update
-sudo apt-get install docker.io
 
+sudo apt update
+sudo apt install docker.io
 # Pull the Docker image
 docker pull pocat/naiveproxy
 
