@@ -1,9 +1,21 @@
 #!/bin/bash
+# 该脚本将自动更新软件包列表并安装Docker
 
-sudo apt update
-sudo apt install docker.io
+# 确保脚本以root权限运行
+if [ "$(id -u)" != "0" ]; then
+   echo "该脚本需要root权限，请使用sudo命令运行" 1>&2
+   exit 1
+fi
 
+# 更新软件包列表
+echo "正在更新软件包列表..."
+apt update
 
+# 安装Docker
+echo "正在安装Docker..."
+apt install -y docker.io
+
+echo "Docker安装完成。"
 # Pull the Docker image
 docker pull pocat/naiveproxy
 
