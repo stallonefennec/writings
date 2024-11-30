@@ -26,17 +26,17 @@ category: xiaoya
 修改env或者compose配置后，需要执行上面的加载配置reload命令生效！
 
 服务正在部署，请查看日志等待部署成功后，尝试访问下面的地址
-alist: http://10.170.0.2:5678, http://34.92.249.186:5678
+alist: http://10.170.0.2:5678, http://35.241.87.77:5678
 
-webdav: http://10.170.0.2:5678/dav, http://34.92.249.186:5678/dav, 
+webdav: http://10.170.0.2:5678/dav, http://35.241.87.77:5678/dav, 
 默认用户密码: guest/guest_Api789
 
-tvbox: http://10.170.0.2:5678/tvbox/my_ext.json, http://34.92.249.186:5678/tvbox/my_ext.json
+tvbox: http://10.170.0.2:5678/tvbox/my_ext.json, http://35.241.87.77:5678/tvbox/my_ext.json
 
-emby: http://10.170.0.2:2345, http://34.92.249.186:2345, 
+emby: http://10.170.0.2:2345, http://35.241.87.77:2345, 
 默认用户密码: xiaoya/1234
 
-jellyfin: http://10.170.0.2:2346, http://34.92.249.186:2346,
+jellyfin: http://10.170.0.2:2346, http://35.241.87.77:2346,
 默认用户密码：ailg/5678
 
 服务正在后台部署，执行这个命令查看日志：/opt/xiaoya/manage.sh logs
