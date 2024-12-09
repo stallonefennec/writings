@@ -38,7 +38,7 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
     output file /var/log/caddy/access.log
     level INFO
   }
-  servers :${LISTEN_PORT} { # 使用用户输入的端口
+  servers :${LISTEN_PORT} {
     protocols h1 h2 h3
   }
 }
@@ -47,11 +47,11 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
   redir https://{host}{uri} permanent
 }
 
-:${LISTEN_PORT}, ${DOMAIN_NAME} # 使用用户输入的端口和域名
-tls ${EMAIL_ADDRESS} # 使用用户输入的邮箱地址
+:${LISTEN_PORT}, ${DOMAIN_NAME} 
+tls ${EMAIL_ADDRESS} 
 route {
   forward_proxy {
-    basic_auth ${USERNAME} ${PASSWORD} # 使用用户输入的用户名和密码
+    basic_auth ${USERNAME} ${PASSWORD} 
     hide_ip
     hide_via
     probe_resistance bing.com
