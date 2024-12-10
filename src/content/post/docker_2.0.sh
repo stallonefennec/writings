@@ -64,4 +64,4 @@ EOF
 
 
 # 运行 Docker 容器 (使用用户输入的端口)
-docker run --network host --name naiveproxy -v /etc/naiveproxy:/etc/naiveproxy -v /var/www/html:/var/www/html -v /var/log/caddy:/var/log/caddy  -e CADDY_CONFIG=/etc/naiveproxy/Caddyfile --restart=always -d pocat/naiveproxy
+docker run --network host --name naiveproxy -v /etc/naiveproxy:/etc/naiveproxy -v /var/www/html:/var/www/html -v /var/log/caddy:/var/log/caddy -e PATH=/etc/naiveproxy/Caddyfile --restart=always -d pocat/naiveproxy
