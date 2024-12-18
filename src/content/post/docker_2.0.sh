@@ -38,26 +38,36 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
     output file /var/log/caddy/access.log
     level INFO
   }
-  servers :${LISTEN_PORT} {
+  servers {
     protocols h1 h2 h3
   }
 }
+
+
+${DOMAIN_NAME} {
+  tls ${EMAIL_ADDRESS} # 使用用户输入的邮箱地址
+  reverse_proxy localhost:8000 { # 假设 Marzban 监听 8000 端口
+    header_up Host {host}
+    header_up X-Real-IP {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
 
 :80 {
   redir https://{host}{uri} permanent
 }
 
-:${LISTEN_PORT}, ${DOMAIN_NAME} 
-tls ${EMAIL_ADDRESS} 
-route {
-  forward_proxy {
-    basic_auth ${USERNAME} ${PASSWORD} 
-    hide_ip
-    hide_via
-    probe_resistance bing.com
-  }
-  file_server {
-    root /var/www/html
+
+:${LISTEN_PORT} { # 使用用户输入的端口作为代理服务器
+  tls ${EMAIL_ADDRESS}
+  route {
+     basic_auth ${USERNAME} ${PASSWORD}
+    forward_proxy {
+        hide_ip
+        hide_via
+        probe_resistance bing.com
+    }
   }
 }
 EOF
