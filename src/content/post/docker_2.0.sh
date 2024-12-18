@@ -24,11 +24,11 @@ docker pull pocat/naiveproxy
 mkdir -p /etc/naiveproxy /var/www/html /var/log/caddy
 
 # 获取用户输入
-read -p "请输入监听端口 (例如: 48658): " LISTEN_PORT
-read -p "请输入域名 (例如: fennec-lucky.com): " DOMAIN_NAME
-read -p "请输入邮箱地址 (用于获取TLS证书): " EMAIL_ADDRESS
-read -p "请输入用户名 (用于基本身份验证): " USERNAME
-read -p "请输入密码 (用于基本身份验证): " PASSWORD
+# read -p "请输入监听端口 (例如: 48658): " LISTEN_PORT
+# read -p "请输入域名 (例如: fennec-lucky.com): " DOMAIN_NAME
+# read -p "请输入邮箱地址 (用于获取TLS证书): " EMAIL_ADDRESS
+# read -p "请输入用户名 (用于基本身份验证): " USERNAME
+# read -p "请输入密码 (用于基本身份验证): " PASSWORD
 
 # 创建 Caddyfile (使用用户输入)
 cat > /etc/naiveproxy/Caddyfile <<EOF
@@ -38,15 +38,12 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
     output file /var/log/caddy/access.log
     level INFO
   }
-  servers {
-    protocols h1 h2 h3
-  }
 }
 
 
-${DOMAIN_NAME} {
-  tls ${EMAIL_ADDRESS} 
-  reverse_proxy localhost:2096{ 
+luckydorothy.com {
+  tls stalloneiv@gmail.com
+  reverse_proxy localhost:2096 {
     header_up Host {host}
     header_up X-Real-IP {remote_host}
     header_up X-Forwarded-Proto {scheme}
@@ -59,14 +56,14 @@ ${DOMAIN_NAME} {
 }
 
 
-:${LISTEN_PORT} { 
-  tls ${EMAIL_ADDRESS}
+:48658 {
+  tls stalloneiv@gmail.com 
   route {
-     basic_auth ${USERNAME} ${PASSWORD}
+    basic_auth stallone 198964
     forward_proxy {
-        hide_ip
-        hide_via
-        probe_resistance bing.com
+      hide_ip
+      hide_via
+      probe_resistance bing.com
     }
   }
 }
