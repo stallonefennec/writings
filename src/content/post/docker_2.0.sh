@@ -46,7 +46,7 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
 
 ${DOMAIN_NAME} {
   tls ${EMAIL_ADDRESS} 
-  reverse_proxy localhost:8000 { 
+  reverse_proxy localhost:2096{ 
     header_up Host {host}
     header_up X-Real-IP {remote_host}
     header_up X-Forwarded-Proto {scheme}
