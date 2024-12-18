@@ -45,8 +45,8 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
 
 
 ${DOMAIN_NAME} {
-  tls ${EMAIL_ADDRESS} # 使用用户输入的邮箱地址
-  reverse_proxy localhost:8000 { # 假设 Marzban 监听 8000 端口
+  tls ${EMAIL_ADDRESS} 
+  reverse_proxy localhost:8000 { 
     header_up Host {host}
     header_up X-Real-IP {remote_host}
     header_up X-Forwarded-Proto {scheme}
@@ -59,7 +59,7 @@ ${DOMAIN_NAME} {
 }
 
 
-:${LISTEN_PORT} { # 使用用户输入的端口作为代理服务器
+:${LISTEN_PORT} { 
   tls ${EMAIL_ADDRESS}
   route {
      basic_auth ${USERNAME} ${PASSWORD}
