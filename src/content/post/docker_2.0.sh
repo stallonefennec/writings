@@ -38,33 +38,26 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
     output file /var/log/caddy/access.log
     level INFO
   }
-}
-
-
-luckydorothy.com {
-  tls stalloneiv@gmail.com
-  reverse_proxy localhost:2096 {
-    header_up Host {host}
-    header_up X-Real-IP {remote_host}
-    header_up X-Forwarded-Proto {scheme}
+  servers :${LISTEN_PORT} { # 使用用户输入的端口
+    protocols h1 h2 h3
   }
 }
-
 
 :80 {
   redir https://{host}{uri} permanent
 }
 
-
-:48658 {
-  tls stalloneiv@gmail.com 
-  route {
-    basic_auth stallone 198964
-    forward_proxy {
-      hide_ip
-      hide_via
-      probe_resistance bing.com
-    }
+:${LISTEN_PORT}, ${DOMAIN_NAME} # 使用用户输入的端口和域名
+tls ${EMAIL_ADDRESS} # 使用用户输入的邮箱地址
+route {
+  forward_proxy {
+    basic_auth ${USERNAME} ${PASSWORD} # 使用用户输入的用户名和密码
+    hide_ip
+    hide_via
+    probe_resistance bing.com
+  }
+  file_server {
+    root /var/www/html
   }
 }
 EOF
