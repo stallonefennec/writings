@@ -14,6 +14,7 @@ apt update
 # 安装Docker
 echo "正在安装Docker..."
 apt install -y docker.io
+sudo apt install docker-compose-plugin
 
 echo "Docker安装完成。"
 
