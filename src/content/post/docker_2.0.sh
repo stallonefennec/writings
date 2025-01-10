@@ -1,5 +1,5 @@
 #!/bin/bash
-# 该脚本将自动更新软件包列表并安装Docker，并允许用户输入端口和域名
+
 
 # 确保脚本以root权限运行
 if [ "$(id -u)" != "0" ]; then
@@ -65,4 +65,5 @@ EOF
 
 
 # 运行 Docker 容器 (使用用户输入的端口)
+docker run -d --name memos -p 5230:5230 -v ~/.memos/:/var/opt/memos neosmemo/memos:stable
 docker run --network host --name naiveproxy -v /etc/naiveproxy:/etc/naiveproxy -v /var/www/html:/var/www/html -v /var/log/caddy:/var/log/caddy -e PATH=/etc/naiveproxy/Caddyfile --restart=always -d pocat/naiveproxy
