@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 设置变量
-REPO_URL="git@github.com:stallonefennec/memos_db.git"
+REPO_URL="git@github.com:stallonefennec/memos_backup.git"
 LOCAL_PATH="$HOME/.memos"
 LOG_FILE="$HOME/memos_update.log"
 
