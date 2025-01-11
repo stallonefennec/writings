@@ -94,53 +94,28 @@ install_git() {
 
 # 安装 Docker
 install_docker() {
-  if command -v docker &>/dev/null && command -v docker-compose &>/dev/null; then
+    if command -v docker &>/dev/null && command -v docker-compose &>/dev/null; then
     log "Docker 和 Docker Compose 已安装."
   else
     read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
     if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
-      log "开始安装 Docker..."
-      apt update
-      apt install -y apt-transport-https ca-certificates curl software-properties-common
+       log "开始安装 Docker..."
+       apt-get clean
+       apt update
       if [[ $? -ne 0 ]]; then
-        log "更新 apt 包失败，请检查网络。"
+         log "更新 apt 源失败，请检查网络或软件源。"
         return 1
       fi
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-      if [[ $? -ne 0 ]]; then
-         log "添加 Docker GPG 密钥失败。"
-         return 1
-      fi
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-      if [[ $? -ne 0 ]]; then
-        log "添加 Docker 源失败。"
-        return 1
-      fi
-      apt update
-       if [[ $? -ne 0 ]]; then
-         log "更新 apt 源失败。"
-         return 1
-      fi
-      apt install -y docker-ce docker-ce-cli containerd.io
-      if [[ $? -eq 0 ]]; then
+       # 使用 Debian 官方源安装 Docker
+      apt install -y docker.io docker-compose
+     if [[ $? -eq 0 ]]; then
         log "Docker 安装完成."
-          # Docker Compose 安装 (使用 pip)
-          if ! command -v docker compose &>/dev/null; then
-             log "开始安装 Docker Compose (使用 pip)..."
-             apt install -y python3-pip
-             if [[ $? -ne 0 ]]; then
-              log "安装 python3-pip 失败。"
-              return 1
-             fi
-             pip3 install docker-compose
-             if [[ $? -eq 0 ]]; then
-              log "Docker Compose 安装完成."
-             else
-               log "Docker Compose 安装失败。"
-               return 1
-             fi
+         # 检查 docker compose 是否安装成功
+        if command -v docker compose &>/dev/null; then
+          log "Docker Compose 安装完成。"
         else
-            log "Docker Compose 已安装。"
+          log "Docker Compose 安装失败。"
+          return 1
         fi
       else
         log "Docker 安装失败。"
@@ -160,7 +135,8 @@ install_nginx() {
     read -r -p "是否安装 Nginx? (y/N): " INSTALL_NGINX_ANSWER
     if [[ "$INSTALL_NGINX_ANSWER" == "y" || "$INSTALL_NGINX_ANSWER" == "Y" ]]; then
       log "开始安装 Nginx..."
-      apt update
+    apt-get clean
+    apt update
       if [[ $? -ne 0 ]]; then
         log "更新 apt 源失败。"
          return 1
@@ -197,13 +173,14 @@ configure_https() {
   if [[ "$LETSENCRYPT_ANSWER" == "y" || "$LETSENCRYPT_ANSWER" == "Y" ]]; then
     if check_domain_dns; then
       log "开始配置 HTTPS 证书..."
-      apt update
+     apt-get clean
+     apt update
       if [[ $? -ne 0 ]]; then
-         log "更新 apt 源失败。"
-         return 1
+        log "更新 apt 源失败。"
+        return 1
       fi
       apt install -y certbot python3-certbot-nginx
-       if [[ $? -ne 0 ]]; then
+      if [[ $? -ne 0 ]]; then
          log "安装 certbot 失败。"
          return 1
       fi
@@ -282,13 +259,16 @@ start_memos() {
   log "Memos 已启动，可通过 https://$DOMAIN:${CONTAINER_PORT} 访问."
 }
 
+
 # 主流程
 get_vps_ip
 ask_for_domain_email
 install_git
 install_docker
 install_nginx
-configure_https
+if check_domain_dns; then
+   configure_https
+fi
 configure_nginx_proxy
 create_docker_compose
 start_memos
