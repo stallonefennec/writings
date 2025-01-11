@@ -109,21 +109,30 @@ install_docker() {
     log "Docker 和 Docker Compose 已安装."
     return 0
   fi
+
   read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
   if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
     log "开始安装 Docker..."
+
     if update_apt; then
-      apt install -y docker.io docker-compose
-      if [[ $? -eq 0 ]]; then
-        log "Docker 安装完成."
-        log "Docker Compose 安装完成."
-        return 0
-      else
+      apt install -y docker.io
+      if [[ $? -ne 0 ]]; then
         log "Docker 安装失败。"
         return 1
       fi
+
+      log "安装 Docker Compose..."
+      sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+      sudo chmod +x /usr/local/bin/docker-compose
+      if [[ $? -ne 0 ]]; then
+        log "Docker Compose 安装失败。"
+        return 1
+      fi
+
+      log "Docker 和 Docker Compose 安装完成."
+      return 0
     else
-      return 1
+      return 1 # apt update 失败
     fi
   else
     log "跳过安装 Docker."
