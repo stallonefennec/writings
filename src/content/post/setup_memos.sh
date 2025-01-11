@@ -83,8 +83,8 @@ install_git() {
       if [[ $? -eq 0 ]]; then
         log "Git 安装完成."
       else
-        log "Git 安装失败."
-         return 1
+        log "Git 安装失败。"
+        return 1
       fi
     else
       log "跳过安装 Git."
@@ -100,29 +100,51 @@ install_docker() {
     read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
     if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
       log "开始安装 Docker..."
-      apt update && apt install -y apt-transport-https ca-certificates curl software-properties-common
+      apt update
+      apt install -y apt-transport-https ca-certificates curl software-properties-common
+      if [[ $? -ne 0 ]]; then
+        log "更新 apt 包失败，请检查网络。"
+        return 1
+      fi
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+      if [[ $? -ne 0 ]]; then
+         log "添加 Docker GPG 密钥失败。"
+         return 1
+      fi
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-      apt update && apt install -y docker-ce docker-ce-cli containerd.io
+      if [[ $? -ne 0 ]]; then
+        log "添加 Docker 源失败。"
+        return 1
+      fi
+      apt update
+       if [[ $? -ne 0 ]]; then
+         log "更新 apt 源失败。"
+         return 1
+      fi
+      apt install -y docker-ce docker-ce-cli containerd.io
       if [[ $? -eq 0 ]]; then
         log "Docker 安装完成."
-        # Docker Compose 安装 (使用 pip)
-        if ! command -v docker compose &>/dev/null; then
-          log "开始安装 Docker Compose (使用 pip)..."
-          apt install -y python3-pip
-          pip3 install docker-compose
-          if [[ $? -eq 0 ]]; then
-            log "Docker Compose 安装完成."
-          else
-            log "Docker Compose 安装失败."
-             return 1
-          fi
-         else
-          log "Docker Compose 已安装."
+          # Docker Compose 安装 (使用 pip)
+          if ! command -v docker compose &>/dev/null; then
+             log "开始安装 Docker Compose (使用 pip)..."
+             apt install -y python3-pip
+             if [[ $? -ne 0 ]]; then
+              log "安装 python3-pip 失败。"
+              return 1
+             fi
+             pip3 install docker-compose
+             if [[ $? -eq 0 ]]; then
+              log "Docker Compose 安装完成."
+             else
+               log "Docker Compose 安装失败。"
+               return 1
+             fi
+        else
+            log "Docker Compose 已安装。"
         fi
       else
-        log "Docker 安装失败."
-         return 1
+        log "Docker 安装失败。"
+        return 1
       fi
     else
       log "跳过安装 Docker."
@@ -138,10 +160,15 @@ install_nginx() {
     read -r -p "是否安装 Nginx? (y/N): " INSTALL_NGINX_ANSWER
     if [[ "$INSTALL_NGINX_ANSWER" == "y" || "$INSTALL_NGINX_ANSWER" == "Y" ]]; then
       log "开始安装 Nginx..."
-      apt update && apt install -y nginx
+      apt update
+      if [[ $? -ne 0 ]]; then
+        log "更新 apt 源失败。"
+         return 1
+      fi
+      apt install -y nginx
       if [[ $? -eq 0 ]]; then
         log "Nginx 安装完成."
-          # 检查 Nginx 服务是否启动
+        # 检查 Nginx 服务是否启动
         if systemctl is-active nginx; then
           log "Nginx 服务正在运行."
         else
@@ -155,8 +182,8 @@ install_nginx() {
           fi
         fi
       else
-        log "Nginx 安装失败."
-         return 1
+        log "Nginx 安装失败。"
+        return 1
       fi
     else
       log "跳过安装 Nginx."
@@ -171,12 +198,20 @@ configure_https() {
     if check_domain_dns; then
       log "开始配置 HTTPS 证书..."
       apt update
+      if [[ $? -ne 0 ]]; then
+         log "更新 apt 源失败。"
+         return 1
+      fi
       apt install -y certbot python3-certbot-nginx
+       if [[ $? -ne 0 ]]; then
+         log "安装 certbot 失败。"
+         return 1
+      fi
       certbot --nginx --agree-tos --no-eff-email -m "$EMAIL" -d "$DOMAIN"
       if [[ $? -eq 0 ]]; then
         log "HTTPS 证书配置完成."
       else
-        log "HTTPS 证书配置失败."
+        log "HTTPS 证书配置失败。"
         return 1
       fi
     else
@@ -223,7 +258,7 @@ EOF
 
 # 创建 docker-compose.yml 文件
 create_docker_compose() {
-    cat << EOF > docker-compose.yml
+  cat << EOF > docker-compose.yml
 version: "3.8"
 services:
   memos:
@@ -235,7 +270,7 @@ services:
       - ./memos_data:/var/opt/memos
     restart: always
 EOF
-    log "docker-compose.yml 文件已创建."
+  log "docker-compose.yml 文件已创建."
 }
 
 # 启动 Memos
