@@ -147,6 +147,40 @@ configure_https() {
   fi
 }
 
+# 配置 Nginx 反向代理
+configure_nginx_proxy() {
+  echo "配置 Nginx 反向代理..."
+  NGINX_CONFIG="/etc/nginx/sites-available/$DOMAIN"
+  cat << EOF > "$NGINX_CONFIG"
+server {
+    listen 80;
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:$CONTAINER_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+  ln -s "$NGINX_CONFIG" "/etc/nginx/sites-enabled/"
+  rm -f "/etc/nginx/sites-enabled/default"
+  systemctl restart nginx
+  echo "Nginx 反向代理配置完成."
+}
+
 # 创建 docker-compose.yml 文件
 create_docker_compose() {
   cat << EOF > docker-compose.yml
@@ -156,9 +190,9 @@ services:
     image: ghcr.io/usememos/memos:latest
     container_name: memos
     ports:
-      - "${CONTAINER_PORT}:${CONTAINER_PORT}"
+      - "127.0.0.1:${CONTAINER_PORT}:${CONTAINER_PORT}"
     volumes:
-      - ~/.memos:/var/opt/memos
+      - ./memos_data:/var/opt/memos
     restart: always
 EOF
   echo "docker-compose.yml 文件已创建."
@@ -180,6 +214,7 @@ install_git
 install_docker
 install_nginx
 configure_https
+configure_nginx_proxy
 create_docker_compose
 start_memos
 
