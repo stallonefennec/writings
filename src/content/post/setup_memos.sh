@@ -192,7 +192,7 @@ services:
     ports:
       - "127.0.0.1:${CONTAINER_PORT}:${CONTAINER_PORT}"
     volumes:
-      - ./memos_data:/var/opt/memos
+      - ~/.memos:/var/opt/memos
     restart: always
 EOF
   echo "docker-compose.yml 文件已创建."
