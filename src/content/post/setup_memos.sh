@@ -12,8 +12,8 @@ LOG_FILE="/var/log/setup_memos.log"
 > "$LOG_FILE"
 
 # 定义全局变量
-DOMAIN=""
-EMAIL=""
+DOMAIN="luckydorothy.com"
+EMAIL="stalloneiv@gmail.com"
 INSTALL_GIT=false
 INSTALL_DOCKER=false
 INSTALL_NGINX=false
@@ -40,19 +40,17 @@ get_vps_ip() {
 
 # 获取域名和邮箱信息
 ask_for_domain_email() {
-  while [[ -z "$DOMAIN" ]]; do
-    read -r -p "请输入你的域名 (例如: example.com): " DOMAIN
-    if [[ -z "$DOMAIN" ]]; then
-      log "域名不能为空，请重新输入。"
+    read -r -p "请输入你的域名 (默认为 luckydorothy.com): " DOMAIN_INPUT
+    if [[ -n "$DOMAIN_INPUT" ]]; then
+       DOMAIN="$DOMAIN_INPUT"
     fi
-  done
+     log "使用的域名: $DOMAIN"
 
-  while [[ -z "$EMAIL" ]]; do
-    read -r -p "请输入你的邮箱地址 (用于 Let's Encrypt 证书): " EMAIL
-    if [[ -z "$EMAIL" ]]; then
-      log "邮箱地址不能为空，请重新输入。"
+    read -r -p "请输入你的邮箱地址 (默认为 stalloneiv@gmail.com): " EMAIL_INPUT
+    if [[ -n "$EMAIL_INPUT" ]]; then
+       EMAIL="$EMAIL_INPUT"
     fi
-  done
+     log "使用的邮箱: $EMAIL"
 }
 
 # 检查域名是否指向 VPS IP
@@ -258,7 +256,6 @@ start_memos() {
   docker compose up -d
   log "Memos 已启动，可通过 https://$DOMAIN:${CONTAINER_PORT} 访问."
 }
-
 
 # 主流程
 get_vps_ip
