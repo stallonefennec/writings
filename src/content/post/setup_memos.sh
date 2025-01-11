@@ -26,13 +26,24 @@ log() {
   echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
+# 更新 apt 仓库
+update_apt() {
+  log "更新 apt 仓库..."
+  apt-get clean
+  apt update
+  if [[ $? -ne 0 ]]; then
+    log "更新 apt 仓库失败，请检查网络和软件源配置。"
+    return 1
+  fi
+}
+
 # 获取 VPS 的公网 IP
 get_vps_ip() {
   log "获取 VPS 公网 IP..."
   VPS_IP=$(curl -s ifconfig.me)
   if [[ -z "$VPS_IP" ]]; then
     log "获取 VPS 公网 IP 失败，请检查网络连接。"
-    exit 1
+    return 1
   else
     log "VPS 公网 IP: $VPS_IP"
   fi
@@ -41,16 +52,12 @@ get_vps_ip() {
 # 获取域名和邮箱信息
 ask_for_domain_email() {
     read -r -p "请输入你的域名 (默认为 luckydorothy.com): " DOMAIN_INPUT
-    if [[ -n "$DOMAIN_INPUT" ]]; then
-       DOMAIN="$DOMAIN_INPUT"
-    fi
-     log "使用的域名: $DOMAIN"
+    DOMAIN="${DOMAIN_INPUT:-$DOMAIN}"
+    log "使用的域名: $DOMAIN"
 
     read -r -p "请输入你的邮箱地址 (默认为 stalloneiv@gmail.com): " EMAIL_INPUT
-    if [[ -n "$EMAIL_INPUT" ]]; then
-       EMAIL="$EMAIL_INPUT"
-    fi
-     log "使用的邮箱: $EMAIL"
+    EMAIL="${EMAIL_INPUT:-$EMAIL}"
+    log "使用的邮箱: $EMAIL"
 }
 
 # 检查域名是否指向 VPS IP
@@ -73,55 +80,54 @@ check_domain_dns() {
 install_git() {
   if command -v git &>/dev/null; then
     log "Git 已安装."
-  else
-    read -r -p "是否安装 Git? (y/N): " INSTALL_GIT_ANSWER
-    if [[ "$INSTALL_GIT_ANSWER" == "y" || "$INSTALL_GIT_ANSWER" == "Y" ]]; then
-      log "开始安装 Git..."
-      apt update && apt install -y git
+    return 0
+  fi
+  read -r -p "是否安装 Git? (y/N): " INSTALL_GIT_ANSWER
+  if [[ "$INSTALL_GIT_ANSWER" == "y" || "$INSTALL_GIT_ANSWER" == "Y" ]]; then
+    log "开始安装 Git..."
+    if update_apt; then
+      apt install -y git
       if [[ $? -eq 0 ]]; then
         log "Git 安装完成."
+        return 0
       else
         log "Git 安装失败。"
         return 1
       fi
     else
-      log "跳过安装 Git."
+      return 1
     fi
+  else
+    log "跳过安装 Git."
+    return 0
   fi
 }
 
 # 安装 Docker
 install_docker() {
-    if command -v docker &>/dev/null && command -v docker-compose &>/dev/null; then
+  if command -v docker &>/dev/null && command -v docker-compose &>/dev/null; then
     log "Docker 和 Docker Compose 已安装."
-  else
-    read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
-    if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
-       log "开始安装 Docker..."
-       apt-get clean
-       apt update
-      if [[ $? -ne 0 ]]; then
-         log "更新 apt 源失败，请检查网络或软件源。"
-        return 1
-      fi
-       # 使用 Debian 官方源安装 Docker
+    return 0
+  fi
+  read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
+  if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
+    log "开始安装 Docker..."
+    if update_apt; then
       apt install -y docker.io docker-compose
-     if [[ $? -eq 0 ]]; then
+      if [[ $? -eq 0 ]]; then
         log "Docker 安装完成."
-         # 检查 docker compose 是否安装成功
-        if command -v docker compose &>/dev/null; then
-          log "Docker Compose 安装完成。"
-        else
-          log "Docker Compose 安装失败。"
-          return 1
-        fi
+        log "Docker Compose 安装完成."
+        return 0
       else
         log "Docker 安装失败。"
         return 1
       fi
     else
-      log "跳过安装 Docker."
+      return 1
     fi
+  else
+    log "跳过安装 Docker."
+    return 0
   fi
 }
 
@@ -129,20 +135,15 @@ install_docker() {
 install_nginx() {
   if command -v nginx &>/dev/null; then
     log "Nginx 已安装."
-  else
-    read -r -p "是否安装 Nginx? (y/N): " INSTALL_NGINX_ANSWER
-    if [[ "$INSTALL_NGINX_ANSWER" == "y" || "$INSTALL_NGINX_ANSWER" == "Y" ]]; then
-      log "开始安装 Nginx..."
-    apt-get clean
-    apt update
-      if [[ $? -ne 0 ]]; then
-        log "更新 apt 源失败。"
-         return 1
-      fi
+    return 0
+  fi
+  read -r -p "是否安装 Nginx? (y/N): " INSTALL_NGINX_ANSWER
+  if [[ "$INSTALL_NGINX_ANSWER" == "y" || "$INSTALL_NGINX_ANSWER" == "Y" ]]; then
+    log "开始安装 Nginx..."
+    if update_apt; then
       apt install -y nginx
       if [[ $? -eq 0 ]]; then
         log "Nginx 安装完成."
-        # 检查 Nginx 服务是否启动
         if systemctl is-active nginx; then
           log "Nginx 服务正在运行."
         else
@@ -150,18 +151,23 @@ install_nginx() {
           systemctl start nginx
           if systemctl is-active nginx; then
             log "Nginx 服务启动成功."
+            return 0
           else
             log "Nginx 服务启动失败，请检查日志。"
-             return 1
+            return 1
           fi
         fi
+        return 0
       else
         log "Nginx 安装失败。"
         return 1
       fi
     else
-      log "跳过安装 Nginx."
+      return 1
     fi
+  else
+    log "跳过安装 Nginx."
+    return 0
   fi
 }
 
@@ -171,30 +177,30 @@ configure_https() {
   if [[ "$LETSENCRYPT_ANSWER" == "y" || "$LETSENCRYPT_ANSWER" == "Y" ]]; then
     if check_domain_dns; then
       log "开始配置 HTTPS 证书..."
-     apt-get clean
-     apt update
-      if [[ $? -ne 0 ]]; then
-        log "更新 apt 源失败。"
-        return 1
-      fi
-      apt install -y certbot python3-certbot-nginx
-      if [[ $? -ne 0 ]]; then
-         log "安装 certbot 失败。"
-         return 1
-      fi
-      certbot --nginx --agree-tos --no-eff-email -m "$EMAIL" -d "$DOMAIN"
-      if [[ $? -eq 0 ]]; then
-        log "HTTPS 证书配置完成."
+      if update_apt; then
+        apt install -y certbot python3-certbot-nginx
+        if [[ $? -ne 0 ]]; then
+          log "安装 certbot 失败。"
+          return 1
+        fi
+        certbot --nginx --agree-tos --no-eff-email -m "$EMAIL" -d "$DOMAIN"
+        if [[ $? -eq 0 ]]; then
+          log "HTTPS 证书配置完成."
+          return 0
+        else
+          log "HTTPS 证书配置失败。"
+          return 1
+        fi
       else
-        log "HTTPS 证书配置失败。"
         return 1
       fi
     else
       log "域名解析未指向当前服务器IP，跳过HTTPS证书配置"
-      return 1
+      return 0
     fi
   else
     log "跳过 HTTPS 证书配置."
+    return 0
   fi
 }
 
@@ -233,6 +239,7 @@ EOF
 
 # 创建 docker-compose.yml 文件
 create_docker_compose() {
+  log "创建 docker-compose.yml 文件..."
   cat << EOF > docker-compose.yml
 version: "3.8"
 services:
@@ -250,6 +257,7 @@ EOF
 
 # 启动 Memos
 start_memos() {
+  log "启动 Memos..."
   if [ ! -d "memos_data" ]; then
     mkdir memos_data
   fi
@@ -260,14 +268,26 @@ start_memos() {
 # 主流程
 get_vps_ip
 ask_for_domain_email
-install_git
-install_docker
-install_nginx
-if check_domain_dns; then
-   configure_https
+
+# 集中更新 apt 仓库
+update_apt
+
+if install_git; then
+  log "Git 安装或已存在."
 fi
-configure_nginx_proxy
-create_docker_compose
-start_memos
+
+if install_docker; then
+  log "Docker 安装或已存在."
+  create_docker_compose
+  start_memos
+fi
+
+if install_nginx; then
+  log "Nginx 安装或已存在."
+  if check_domain_dns; then
+    configure_https
+    configure_nginx_proxy
+  fi
+fi
 
 log "脚本执行完毕."
