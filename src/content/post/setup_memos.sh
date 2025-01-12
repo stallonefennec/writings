@@ -243,7 +243,12 @@ EOF
   ln -s "$NGINX_CONFIG" "/etc/nginx/sites-enabled/"
   rm -f "/etc/nginx/sites-enabled/default"
   systemctl restart nginx
+    if [[ $? -ne 0 ]]; then
+      log "Nginx 反向代理配置失败, 请检查 nginx 日志。"
+      return 1
+    fi
   log "Nginx 反向代理配置完成."
+  return 0
 }
 
 # 创建 docker-compose.yml 文件
@@ -270,9 +275,18 @@ start_memos() {
   if [ ! -d "~/.memos" ]; then
     mkdir ~/.memos
   fi
-  bash <(curl -Ls https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/sync_memos.sh)
-  docker-compose up -d
-  log "Memos 已启动，可通过 https://$DOMAIN:${CONTAINER_PORT} 访问."
+    docker-compose up -d
+    if [[ $? -ne 0 ]]; then
+      log "Memos 启动失败, 请检查 docker 日志。"
+      return 1
+    fi
+  log "Memos 已启动，可通过 https://$DOMAIN 访问."
+  docker exec -it memos  bash <(curl -Ls https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/sync_memos.sh)
+      if [[ $? -ne 0 ]]; then
+        log "memos 数据同步失败。"
+        return 1
+      fi
+  return 0
 }
 
 # 主流程
@@ -289,14 +303,17 @@ fi
 if install_docker; then
   log "Docker 安装或已存在."
   create_docker_compose
-  start_memos
 fi
 
 if install_nginx; then
   log "Nginx 安装或已存在."
   if check_domain_dns; then
-    configure_https
-    configure_nginx_proxy
+     configure_https
+    if configure_nginx_proxy; then
+      if install_docker; then # 在配置好 nginx 之后再启动 memos
+        start_memos
+        fi
+      fi
   fi
 fi
 
