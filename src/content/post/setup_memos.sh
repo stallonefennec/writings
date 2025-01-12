@@ -12,7 +12,7 @@ LOG_FILE="/var/log/setup_memos.log"
 > "$LOG_FILE"
 
 # 定义全局变量
-DOMAIN="luckydorothy.com"
+DOMAIN="fennec-lucky.com"
 EMAIL="stalloneiv@gmail.com"
 INSTALL_GIT=false
 INSTALL_DOCKER=false
@@ -51,7 +51,7 @@ get_vps_ip() {
 
 # 获取域名和邮箱信息
 ask_for_domain_email() {
-    read -r -p "请输入你的域名 (默认为 luckydorothy.com): " DOMAIN_INPUT
+    read -r -p "请输入你的域名 (默认为 fennec-lucky.com): " DOMAIN_INPUT
     DOMAIN="${DOMAIN_INPUT:-$DOMAIN}"
     log "使用的域名: $DOMAIN"
 
@@ -258,7 +258,7 @@ services:
     ports:
       - "127.0.0.1:${CONTAINER_PORT}:${CONTAINER_PORT}"
     volumes:
-      - ./memos_data:/var/opt/memos
+      - ~/.memos:/var/opt/memos
     restart: always
 EOF
   log "docker-compose.yml 文件已创建."
@@ -267,10 +267,11 @@ EOF
 # 启动 Memos
 start_memos() {
   log "启动 Memos..."
-  if [ ! -d "memos_data" ]; then
-    mkdir memos_data
+  if [ ! -d "~/.memos" ]; then
+    mkdir ~/.memos
   fi
-  docker compose up -d
+  bash <(curl -Ls https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/sync_memos.sh)
+  docker-compose up -d
   log "Memos 已启动，可通过 https://$DOMAIN:${CONTAINER_PORT} 访问."
 }
 
