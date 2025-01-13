@@ -86,4 +86,7 @@ else
 fi
 
 log "Update process finished."
+docker-compose up -d
+systemctl restart nginx
+log "nginx 已刷新"
 exit 0
