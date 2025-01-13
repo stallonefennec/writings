@@ -281,12 +281,8 @@ start_memos() {
       return 1
     fi
   log "Memos 已启动，可通过 https://$DOMAIN 访问."
-  docker exec -it memos  bash <(curl -Ls https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/sync_memos.sh)
-      if [[ $? -ne 0 ]]; then
-        log "memos 数据同步失败。"
-        return 1
-      fi
-  return 0
+  
+ 
 }
 
 # 主流程
@@ -316,5 +312,7 @@ if install_nginx; then
       fi
   fi
 fi
+systemctl restart nginx
+log "nginx 已刷新"
 
 log "脚本执行完毕."
