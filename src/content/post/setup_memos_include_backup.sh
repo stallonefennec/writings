@@ -409,6 +409,9 @@ sync_memos() {
   fi
     update_log "Update process finished."
   return 0
+  docker-compose -f /home/freeluckboy/docker-compose.yml up -d
+  systemctl restart nginx
+  log "nginx 已刷新"
 }
 
 # 主流程
