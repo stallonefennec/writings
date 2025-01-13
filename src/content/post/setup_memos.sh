@@ -255,7 +255,6 @@ EOF
 create_docker_compose() {
   log "创建 docker-compose.yml 文件..."
   cat << EOF > docker-compose.yml
-version: "3.8"
 services:
   memos:
     image: ghcr.io/usememos/memos:latest
