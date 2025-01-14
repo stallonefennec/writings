@@ -8,8 +8,8 @@ fi
 
 # 定义变量
 INSTALL_DOCKER=false
-INSTALL_CADDY=false
-INSTALL_COMPOSE=false # 新增变量
+INSTALL_NGINX=false
+INSTALL_COMPOSE=false
 
 # 检测Docker是否已安装
 if command -v docker &> /dev/null; then
@@ -24,7 +24,6 @@ else
     fi
 fi
 
-
 # 检测Docker Compose是否已安装
 if command -v docker-compose &> /dev/null; then
     echo "Docker Compose已安装."
@@ -38,19 +37,17 @@ else
     fi
 fi
 
-
-# 检测 Caddy 是否已安装 (这里假设你使用 apt 安装的，实际安装方式不同，检测方式需要调整)
-if command -v caddy &> /dev/null; then
-   echo "Caddy 已安装."
+# 检测 Nginx 是否已安装
+if command -v nginx &> /dev/null; then
+  echo "Nginx已安装."
 else
-    read -p "Caddy 未安装，是否要安装？ (y/n): " install_caddy_choice
-    if [[ "$install_caddy_choice" == "y" || "$install_caddy_choice" == "Y" ]]; then
-        INSTALL_CADDY=true
+    read -p "Nginx 未安装，是否要安装？ (y/n): " install_nginx_choice
+    if [[ "$install_nginx_choice" == "y" || "$install_nginx_choice" == "Y" ]]; then
+        INSTALL_NGINX=true
     else
-        echo "Caddy 未安装，脚本将继续运行，请确保 Caddy 已经安装好."
+        echo "Nginx 未安装，脚本将继续运行，请确保 Nginx 已经安装好."
     fi
 fi
-
 
 # 安装Docker (如果需要)
 if [ "$INSTALL_DOCKER" = true ]; then
@@ -59,20 +56,19 @@ if [ "$INSTALL_DOCKER" = true ]; then
     apt install -y docker.io
 fi
 
-# 安装Docker Compose (如果需要)
+# 安装Docker Compose Plugin (如果需要)
 if [ "$INSTALL_COMPOSE" = true ]; then
   echo "正在安装Docker Compose plugin..."
    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
    sudo chmod +x /usr/local/bin/docker-compose
 fi
 
-# 安装Caddy (如果需要)
-if [ "$INSTALL_CADDY" = true ]; then
-  echo "正在安装 Caddy..."
+# 安装Nginx (如果需要)
+if [ "$INSTALL_NGINX" = true ]; then
+  echo "正在安装Nginx..."
   apt update
-  apt install -y caddy
+  apt install -y nginx
 fi
-
 
 echo "Docker安装完成。"
 
@@ -82,9 +78,8 @@ if docker ps -q -f "name=naiveproxy" | grep -q . ; then
     exit 1
 fi
 
-
 # 创建目录
-mkdir -p /etc/naiveproxy /var/www/html /var/log/caddy
+mkdir -p /etc/naiveproxy /var/www/html /var/log/nginx
 
 # 设置默认值
 DEFAULT_LISTEN_PORT="48658"
@@ -92,6 +87,7 @@ DEFAULT_DOMAIN_NAME="luckydorothy.com"
 DEFAULT_EMAIL_ADDRESS="stalloneiv@gmail.com"
 DEFAULT_USERNAME="stallone"
 DEFAULT_PASSWORD="198964"
+
 
 # 获取用户输入，如果为空则使用默认值
 read -p "请输入监听端口 (默认: $DEFAULT_LISTEN_PORT): " LISTEN_PORT
@@ -109,37 +105,55 @@ USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
 read -p "请输入密码 (用于基本身份验证, 默认: $DEFAULT_PASSWORD): " PASSWORD
 PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
 
-# 创建 Caddyfile (使用用户输入或默认值)
-cat > /etc/naiveproxy/Caddyfile <<EOF
-{
-  admin off
-  log {
-    output file /var/log/caddy/access.log
-    level INFO
-  }
-  servers :${LISTEN_PORT} {
-    protocols h1 h2 h3
-  }
+
+# 生成 Nginx 配置文件
+cat > /etc/nginx/conf.d/naiveproxy.conf <<EOF
+server {
+    listen 80;
+    server_name ${DOMAIN_NAME};
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 
-:80 {
-  redir https://{host}{uri} permanent
-}
+server {
+    listen 443 ssl http2;
+    server_name ${DOMAIN_NAME};
 
-:${LISTEN_PORT}, ${DOMAIN_NAME}
-tls ${EMAIL_ADDRESS}
-route {
-  forward_proxy {
-    basic_auth ${USERNAME} ${PASSWORD}
-    hide_ip
-    hide_via
-    probe_resistance bing.com
-  }
-  file_server {
-    root /var/www/html
-  }
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:MozSSL:10m;  # mozilla ssl config
+    ssl_session_tickets off;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256';
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:${LISTEN_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        # WebSocket settings
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 }
 EOF
+
+# 自动申请证书
+if [ "$INSTALL_NGINX" = true ]; then
+  echo "正在使用 certbot 获取证书..."
+  apt install -y certbot python3-certbot-nginx
+  certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}
+fi
 
 # 创建 docker-compose.yml 文件 (动态生成，只包含 naiveproxy)
 cat > docker-compose.yml <<EOF
@@ -152,14 +166,21 @@ services:
     volumes:
       - /etc/naiveproxy:/etc/naiveproxy
       - /var/www/html:/var/www/html
-      - /var/log/caddy:/var/log/caddy
     environment:
       - PATH=/etc/naiveproxy/Caddyfile
+      - LISTEN_PORT=${LISTEN_PORT} # 使用 LISTEN_PORT
     restart: always
 EOF
 
 # 启动 Docker Compose
 echo "正在使用 Docker Compose 启动 naiveproxy 服务..."
 docker-compose up -d
+
+# 启动 Nginx
+if [ "$INSTALL_NGINX" = true ]; then
+    echo "正在启动 Nginx 服务..."
+    systemctl enable nginx
+    systemctl restart nginx
+fi
 
 echo "naiveproxy 服务已启动."
