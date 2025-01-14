@@ -145,6 +145,6 @@ EOF
 
 # 启动 Docker Compose
 echo "正在使用 Docker Compose 启动 naiveproxy 服务..."
-docker compose up -d
+docker-compose up -d
 
 echo "naiveproxy 服务已启动."
