@@ -9,6 +9,7 @@ fi
 # 定义变量
 INSTALL_DOCKER=false
 INSTALL_CADDY=false
+INSTALL_COMPOSE=false # 新增变量
 
 # 检测Docker是否已安装
 if command -v docker &> /dev/null; then
@@ -30,7 +31,6 @@ if command -v docker-compose &> /dev/null; then
 else
   read -p "Docker Compose未安装，是否要安装？ (y/n): " install_compose_choice
     if [[ "$install_compose_choice" == "y" || "$install_compose_choice" == "Y" ]]; then
-        INSTALL_DOCKER=true
         INSTALL_COMPOSE=true
     else
       echo "Docker Compose未安装，脚本退出."
@@ -62,11 +62,26 @@ fi
 # 安装Docker Compose (如果需要)
 if [ "$INSTALL_COMPOSE" = true ]; then
   echo "正在安装Docker Compose plugin..."
-  apt install -y docker-compose-plugin
+   sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+   sudo chmod +x /usr/local/bin/docker-compose
+fi
+
+# 安装Caddy (如果需要)
+if [ "$INSTALL_CADDY" = true ]; then
+  echo "正在安装 Caddy..."
+  apt update
+  apt install -y caddy
 fi
 
 
 echo "Docker安装完成。"
+
+# 检测 naiveproxy 是否已经在运行
+if docker ps -q -f "name=naiveproxy" | grep -q . ; then
+    echo "naiveproxy 容器已经在运行，请先停止或者删除该容器!"
+    exit 1
+fi
+
 
 # 创建目录
 mkdir -p /etc/naiveproxy /var/www/html /var/log/caddy
