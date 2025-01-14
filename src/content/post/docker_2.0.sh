@@ -10,6 +10,64 @@ fi
 INSTALL_DOCKER=false
 INSTALL_NGINX=false
 INSTALL_COMPOSE=false
+CERT_APPLIED=false # 添加一个变量来记录证书是否成功申请
+
+# 设置默认值
+DEFAULT_LISTEN_PORT="48658"
+DEFAULT_DOMAIN_NAME="luckydorothy.com"
+DEFAULT_EMAIL_ADDRESS="stalloneiv@gmail.com"
+DEFAULT_USERNAME="stallone"
+DEFAULT_PASSWORD="198964"
+
+
+# 获取用户输入，如果为空则使用默认值
+read -p "请输入监听端口 (默认: $DEFAULT_LISTEN_PORT): " LISTEN_PORT
+LISTEN_PORT="${LISTEN_PORT:-$DEFAULT_LISTEN_PORT}"
+
+read -p "请输入域名 (默认: $DEFAULT_DOMAIN_NAME): " DOMAIN_NAME
+DOMAIN_NAME="${DOMAIN_NAME:-$DEFAULT_DOMAIN_NAME}"
+
+read -p "请输入邮箱地址 (用于获取TLS证书, 默认: $DEFAULT_EMAIL_ADDRESS): " EMAIL_ADDRESS
+EMAIL_ADDRESS="${EMAIL_ADDRESS:-$DEFAULT_EMAIL_ADDRESS}"
+
+read -p "请输入用户名 (用于基本身份验证, 默认: $DEFAULT_USERNAME): " USERNAME
+USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+
+read -p "请输入密码 (用于基本身份验证, 默认: $DEFAULT_PASSWORD): " PASSWORD
+PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
+
+# 检测 Nginx 是否已安装
+if command -v nginx &> /dev/null; then
+  echo "Nginx已安装."
+else
+    read -p "Nginx 未安装，是否要安装？ (y/n): " install_nginx_choice
+    if [[ "$install_nginx_choice" == "y" || "$install_nginx_choice" == "Y" ]]; then
+        INSTALL_NGINX=true
+    else
+        echo "Nginx 未安装，脚本将继续运行，请确保 Nginx 已经安装好."
+    fi
+fi
+
+# 安装Nginx (如果需要)
+if [ "$INSTALL_NGINX" = true ]; then
+  echo "正在安装Nginx..."
+  apt update
+  apt install -y nginx
+fi
+
+
+# 自动申请证书(在安装Nginx之后)
+if [ "$INSTALL_NGINX" = true ]; then
+  echo "正在使用 certbot 获取证书..."
+  apt install -y certbot python3-certbot-nginx
+  if ! certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}; then
+      echo "证书申请失败，请检查您的域名和 DNS 解析是否正确。"
+      exit 1
+  else
+    CERT_APPLIED=true
+   fi
+fi
+
 
 # 检测Docker是否已安装
 if command -v docker &> /dev/null; then
@@ -37,18 +95,6 @@ else
     fi
 fi
 
-# 检测 Nginx 是否已安装
-if command -v nginx &> /dev/null; then
-  echo "Nginx已安装."
-else
-    read -p "Nginx 未安装，是否要安装？ (y/n): " install_nginx_choice
-    if [[ "$install_nginx_choice" == "y" || "$install_nginx_choice" == "Y" ]]; then
-        INSTALL_NGINX=true
-    else
-        echo "Nginx 未安装，脚本将继续运行，请确保 Nginx 已经安装好."
-    fi
-fi
-
 # 安装Docker (如果需要)
 if [ "$INSTALL_DOCKER" = true ]; then
     echo "正在安装Docker..."
@@ -63,51 +109,22 @@ if [ "$INSTALL_COMPOSE" = true ]; then
    sudo chmod +x /usr/local/bin/docker-compose
 fi
 
-# 安装Nginx (如果需要)
-if [ "$INSTALL_NGINX" = true ]; then
-  echo "正在安装Nginx..."
-  apt update
-  apt install -y nginx
-fi
-
 echo "Docker安装完成。"
 
 # 检测 naiveproxy 是否已经在运行
 if docker ps -q -f "name=naiveproxy" | grep -q . ; then
-    echo "naiveproxy 容器已经在运行，请先停止或者删除该容器!"
+    echo "naiveproxy 容器已经在运行，正在停止或者删除该容器!"
+    docker stop naiveproxy
+    docker rm naiveproxy
     exit 1
 fi
 
 # 创建目录
 mkdir -p /etc/naiveproxy /var/www/html /var/log/nginx
 
-# 设置默认值
-DEFAULT_LISTEN_PORT="48658"
-DEFAULT_DOMAIN_NAME="luckydorothy.com"
-DEFAULT_EMAIL_ADDRESS="stalloneiv@gmail.com"
-DEFAULT_USERNAME="stallone"
-DEFAULT_PASSWORD="198964"
-
-
-# 获取用户输入，如果为空则使用默认值
-read -p "请输入监听端口 (默认: $DEFAULT_LISTEN_PORT): " LISTEN_PORT
-LISTEN_PORT="${LISTEN_PORT:-$DEFAULT_LISTEN_PORT}"
-
-read -p "请输入域名 (默认: $DEFAULT_DOMAIN_NAME): " DOMAIN_NAME
-DOMAIN_NAME="${DOMAIN_NAME:-$DEFAULT_DOMAIN_NAME}"
-
-read -p "请输入邮箱地址 (用于获取TLS证书, 默认: $DEFAULT_EMAIL_ADDRESS): " EMAIL_ADDRESS
-EMAIL_ADDRESS="${EMAIL_ADDRESS:-$DEFAULT_EMAIL_ADDRESS}"
-
-read -p "请输入用户名 (用于基本身份验证, 默认: $DEFAULT_USERNAME): " USERNAME
-USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
-
-read -p "请输入密码 (用于基本身份验证, 默认: $DEFAULT_PASSWORD): " PASSWORD
-PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
-
-
-# 生成 Nginx 配置文件
-cat > /etc/nginx/conf.d/naiveproxy.conf <<EOF
+# 生成 Nginx 配置文件 (只有在证书申请成功后才执行)
+if [ "$CERT_APPLIED" = true ]; then
+ cat > /etc/nginx/conf.d/naiveproxy.conf <<EOF
 server {
     listen 80;
     server_name ${DOMAIN_NAME};
@@ -147,16 +164,6 @@ server {
     }
 }
 EOF
-
-# 自动申请证书
-if [ "$INSTALL_NGINX" = true ]; then
-  echo "正在使用 certbot 获取证书..."
-  apt install -y certbot python3-certbot-nginx
-  if ! certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}; then
-      echo "证书申请失败，请检查您的域名和 DNS 解析是否正确。"
-      exit 1
-   fi
-
 fi
 
 # 创建 docker-compose.yml 文件 (动态生成，只包含 naiveproxy)
@@ -179,13 +186,14 @@ EOF
 echo "正在使用 Docker Compose 启动 naiveproxy 服务..."
 docker-compose up -d
 
+
 # 启动 Nginx
-if [ "$INSTALL_NGINX" = true ]; then
+if [ "$INSTALL_NGINX" = true ] && [ "$CERT_APPLIED" = true ]; then
     echo "正在启动 Nginx 服务..."
     systemctl enable nginx
     systemctl restart nginx
 
-   # 测试nginx配置
+  # 测试nginx配置
    if ! nginx -t; then
        echo "nginx配置错误，请检查配置文件"
        exit 1
