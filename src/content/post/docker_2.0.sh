@@ -6,14 +6,65 @@ if [ "$(id -u)" != "0" ]; then
    exit 1
 fi
 
-# 更新软件包列表
-echo "正在更新软件包列表..."
-apt update
+# 定义变量
+INSTALL_DOCKER=false
+INSTALL_CADDY=false
 
-# 安装Docker Compose
-echo "正在安装Docker..."
-apt install -y docker.io
-apt install -y docker-compose-plugin
+# 检测Docker是否已安装
+if command -v docker &> /dev/null; then
+    echo "Docker已安装."
+else
+    read -p "Docker未安装，是否要安装？ (y/n): " install_docker_choice
+    if [[ "$install_docker_choice" == "y" || "$install_docker_choice" == "Y" ]]; then
+        INSTALL_DOCKER=true
+    else
+      echo "Docker未安装，脚本退出."
+      exit 1
+    fi
+fi
+
+
+# 检测Docker Compose是否已安装
+if command -v docker-compose &> /dev/null; then
+    echo "Docker Compose已安装."
+else
+  read -p "Docker Compose未安装，是否要安装？ (y/n): " install_compose_choice
+    if [[ "$install_compose_choice" == "y" || "$install_compose_choice" == "Y" ]]; then
+        INSTALL_DOCKER=true
+        INSTALL_COMPOSE=true
+    else
+      echo "Docker Compose未安装，脚本退出."
+      exit 1
+    fi
+fi
+
+
+# 检测 Caddy 是否已安装 (这里假设你使用 apt 安装的，实际安装方式不同，检测方式需要调整)
+if command -v caddy &> /dev/null; then
+   echo "Caddy 已安装."
+else
+    read -p "Caddy 未安装，是否要安装？ (y/n): " install_caddy_choice
+    if [[ "$install_caddy_choice" == "y" || "$install_caddy_choice" == "Y" ]]; then
+        INSTALL_CADDY=true
+    else
+        echo "Caddy 未安装，脚本将继续运行，请确保 Caddy 已经安装好."
+    fi
+fi
+
+
+# 安装Docker (如果需要)
+if [ "$INSTALL_DOCKER" = true ]; then
+    echo "正在安装Docker..."
+    apt update
+    apt install -y docker.io
+fi
+
+# 安装Docker Compose (如果需要)
+if [ "$INSTALL_COMPOSE" = true ]; then
+  echo "正在安装Docker Compose plugin..."
+  apt install -y docker-compose-plugin
+fi
+
 
 echo "Docker安装完成。"
 
@@ -77,6 +128,7 @@ EOF
 
 # 创建 docker-compose.yml 文件 (动态生成，只包含 naiveproxy)
 cat > docker-compose.yml <<EOF
+version: "3.9"
 services:
   naiveproxy:
     image: pocat/naiveproxy
