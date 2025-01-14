@@ -10,17 +10,14 @@ fi
 echo "正在更新软件包列表..."
 apt update
 
-# 安装Docker
+# 安装Docker Compose
 echo "正在安装Docker..."
 apt install -y docker.io
 apt install -y docker-compose-plugin
 
 echo "Docker安装完成。"
 
-# Pull the Docker image
-docker pull pocat/naiveproxy
-
-# Create directories
+# 创建目录
 mkdir -p /etc/naiveproxy /var/www/html /var/log/caddy
 
 # 设置默认值
@@ -78,6 +75,24 @@ route {
 }
 EOF
 
+# 创建 docker-compose.yml 文件 (动态生成，只包含 naiveproxy)
+cat > docker-compose.yml <<EOF
+services:
+  naiveproxy:
+    image: pocat/naiveproxy
+    container_name: naiveproxy
+    network_mode: "host"
+    volumes:
+      - /etc/naiveproxy:/etc/naiveproxy
+      - /var/www/html:/var/www/html
+      - /var/log/caddy:/var/log/caddy
+    environment:
+      - PATH=/etc/naiveproxy/Caddyfile
+    restart: always
+EOF
 
-# 运行 Docker 容器 (使用用户输入的端口)
-docker run --network host --name naiveproxy -v /etc/naiveproxy:/etc/naiveproxy -v /var/www/html:/var/www/html -v /var/log/caddy:/var/log/caddy -e PATH=/etc/naiveproxy/Caddyfile --restart=always -d pocat/naiveproxy
+# 启动 Docker Compose
+echo "正在使用 Docker Compose 启动 naiveproxy 服务..."
+docker compose up -d
+
+echo "naiveproxy 服务已启动."
