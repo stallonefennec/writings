@@ -152,12 +152,15 @@ EOF
 if [ "$INSTALL_NGINX" = true ]; then
   echo "正在使用 certbot 获取证书..."
   apt install -y certbot python3-certbot-nginx
-  certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}
+  if ! certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}; then
+      echo "证书申请失败，请检查您的域名和 DNS 解析是否正确。"
+      exit 1
+   fi
+
 fi
 
 # 创建 docker-compose.yml 文件 (动态生成，只包含 naiveproxy)
 cat > docker-compose.yml <<EOF
-version: "3.9"
 services:
   naiveproxy:
     image: pocat/naiveproxy
@@ -181,6 +184,12 @@ if [ "$INSTALL_NGINX" = true ]; then
     echo "正在启动 Nginx 服务..."
     systemctl enable nginx
     systemctl restart nginx
+
+   # 测试nginx配置
+   if ! nginx -t; then
+       echo "nginx配置错误，请检查配置文件"
+       exit 1
+   fi
 fi
 
 echo "naiveproxy 服务已启动."
