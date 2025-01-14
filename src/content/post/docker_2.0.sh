@@ -53,20 +53,18 @@ if [ "$INSTALL_NGINX" = true ]; then
   echo "正在安装Nginx..."
   apt update
   apt install -y nginx
+  # 自动申请证书(在安装Nginx之后)
+    echo "正在使用 certbot 获取证书..."
+    apt install -y certbot python3-certbot-nginx
+    if ! certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}; then
+        echo "证书申请失败，请检查您的域名和 DNS 解析是否正确。"
+        exit 1
+    else
+        CERT_APPLIED=true
+    fi
+
 fi
 
-
-# 自动申请证书(在安装Nginx之后)
-if [ "$INSTALL_NGINX" = true ]; then
-  echo "正在使用 certbot 获取证书..."
-  apt install -y certbot python3-certbot-nginx
-  if ! certbot --nginx --non-interactive --agree-tos --email ${EMAIL_ADDRESS} -d ${DOMAIN_NAME}; then
-      echo "证书申请失败，请检查您的域名和 DNS 解析是否正确。"
-      exit 1
-  else
-    CERT_APPLIED=true
-   fi
-fi
 
 
 # 检测Docker是否已安装
@@ -109,13 +107,12 @@ if [ "$INSTALL_COMPOSE" = true ]; then
    sudo chmod +x /usr/local/bin/docker-compose
 fi
 
+
 echo "Docker安装完成。"
 
 # 检测 naiveproxy 是否已经在运行
 if docker ps -q -f "name=naiveproxy" | grep -q . ; then
-    echo "naiveproxy 容器已经在运行，正在停止或者删除该容器!"
-    docker stop naiveproxy
-    docker rm naiveproxy
+    echo "naiveproxy 容器已经在运行，请先停止或者删除该容器!"
     exit 1
 fi
 
