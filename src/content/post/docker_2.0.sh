@@ -260,16 +260,14 @@ create_docker_compose() {
   log "创建 docker-compose.yml 文件..."
   cat << EOF > docker-compose.yml
 services:
-  naiveproxy:
-    image: pocat/naiveproxy
+  service.naiveproxy:
+    image: zydou/naiveproxy:latest
     container_name: naiveproxy
-    network_mode: "host"
-    environment:
-      - LISTEN_PORT=${CONTAINER_PORT}
-    volumes:
-      - /etc/naiveproxy:/etc/naiveproxy
-      - /var/www/html:/var/www/html
+    ports:
+      - 48658:48658
     restart: always
+    command: naive --listen=socks://0.0.0.0:48658 --proxy=https://stallone:198964@luckydorothy.com
+    # replace `socks` to `http` in the above command if you need a http proxy
 EOF
   log "docker-compose.yml 文件已创建."
 }
