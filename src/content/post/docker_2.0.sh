@@ -264,9 +264,9 @@ services:
     image: zydou/naiveproxy:latest
     container_name: naiveproxy
     ports:
-      - 48658:48658
+      - 48658:1080
     restart: always
-    command: naive --listen=socks://0.0.0.0:48658 --proxy=https://stallone:198964@fennec-lucky.com
+    command: naive --listen=socks://0.0.0.0:1080 --proxy=https://stallone:198964@fennec-lucky.com
     # replace `socks` to `http` in the above command if you need a http proxy
 EOF
   log "docker-compose.yml 文件已创建."
