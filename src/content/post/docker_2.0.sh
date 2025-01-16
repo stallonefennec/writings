@@ -365,6 +365,7 @@ default_email="stalloneiv@gmail.com"
 default_fakeHost="baidu.com"
 read_var_from_user() {
     eval $invocation
+
     # host
     if [ -z "$host" ]; then
         read -p "请输入域名(默认$default_domain):" host
@@ -375,7 +376,7 @@ read_var_from_user() {
         say "域名: $host"
     fi
 
-    # cert
+   # cert
     if [ -z "$certMode" ]; then
         read -p "请输入证书模式(1.Caddy自动颁发；2.使用现有证书。默认1):" certMode
         if [ -z "$certMode" ]; then
@@ -387,6 +388,17 @@ read_var_from_user() {
         # say "certMode: $certMode（由Caddy自动颁发）"
         say_warning "自动颁发证书需要开放80端口给Caddy使用，请确保80端口开放且未被占用"
         httpPort="80"
+         # 检查是否已经存在证书
+        if [ -d "/etc/letsencrypt/live/$host" ]; then
+         echo "检测到已存在证书, 是否需要重新申请？ [y/N]"
+          read -r renew_cert
+         if [[ $renew_cert =~ ^([yY][eE][sS]|[yY])$ ]]; then
+           say "重新申请证书"
+         else
+            say "使用已存在的证书"
+            autoHttps="auto_https disable_certs"
+           fi
+        fi
         # email
         if [ -z "$mail" ]; then
             read -p "请输入邮箱(默认$default_email):" mail
@@ -411,6 +423,7 @@ read_var_from_user() {
             say "证书文件: $certFile"
         fi
     fi
+
 
     # port
     if [ -z "$httpPort" ]; then
@@ -568,7 +581,7 @@ runContainer() {
     } || {
         certsV=""
         if [ "$certMode" == "2" ]; then
-            certsV="-v $certFile:certFile -v $certKeyFile:$certKeyFile"
+            certsV="-v $certFile:$certFile -v $certKeyFile:$certKeyFile"
         fi
         docker run -itd --name naiveproxy \
         --restart=unless-stopped \
