@@ -14,6 +14,7 @@ apt update
 # 安装Docker
 echo "正在安装Docker..."
 apt install -y docker.io
+apt install -y docker-compose
 
 echo "Docker安装完成。"
 # Pull the Docker image
@@ -39,14 +40,14 @@ cat > /etc/naiveproxy/Caddyfile <<EOF
  redir https://{host}{uri} permanent
 }
 
-:48658, fennec-lucky.com
+:48658, luckydorothy.com
 tls stalloneiv@gmail.com
 route {
  forward_proxy {
    basic_auth stallone 198964
    hide_ip
    hide_via
-   probe_resistance bing.com
+   probe_resistance ip111.cn
  }
  file_server {
    root /var/www/html
