@@ -20,33 +20,74 @@ INSTALL_NGINX=false
 LETSENCRYPT=false
 VPS_IP=""
 CONTAINER_PORT=5230
-CONTAINER_NAME="memos" # docker 容器名称
-DOCKER_COMPOSE_FILE="docker-compose.yml" # docker-compose 文件路径
+CONTAINER_NAME="memos"
+DOCKER_COMPOSE_FILE="docker-compose.yml"
 BACKUP_REPO_URL="git@github.com:stallonefennec/memos_db.git"
 SYNC_REPO_URL="git@github.com:stallonefennec/memos_backup.git"
 LOCAL_PATH="$HOME/.memos"
 BACKUP_LOG="$HOME/memos_backup.log"
 UPDATE_LOG="$HOME/memos_update.log"
+
 # 定义日志函数
 log() {
   echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
-# 定义备份日志函数
 backup_log() {
   echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a "$BACKUP_LOG"
 }
-# 定义更新日志函数
 update_log() {
   echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a "$UPDATE_LOG"
 }
-# 更新 apt 仓库
+
+# 关闭 IPv6
+disable_ipv6() {
+  log "正在关闭 IPv6..."
+  echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+  echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
+  echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf
+  sysctl -p >/dev/null 2>&1
+  if [[ $? -eq 0 ]]; then
+    log "IPv6 已成功关闭。"
+  else
+    log "关闭 IPv6 失败，请检查配置。"
+  fi
+}
+
+# 更新 apt 仓库并安装 dnsutils (dig)
 update_apt() {
-  log "更新 apt 仓库..."
+  log "更新 apt 仓库并安装 dnsutils..."
   apt-get clean
   apt update
+  apt install -y dnsutils
   if [[ $? -ne 0 ]]; then
-    log "更新 apt 仓库失败，请检查网络和软件源配置。"
+    log "更新 apt 仓库或安装 dnsutils 失败，请检查网络和软件源配置。"
     return 1
+  fi
+  log "dnsutils (dig) 已安装。"
+}
+
+# 检查并配置 SSH 密钥
+check_and_setup_ssh_key() {
+  if [ -f ~/.ssh/id_rsa ] && [ -f ~/.ssh/id_rsa.pub ]; then
+    log "SSH 密钥已配置。"
+    return 0
+  else
+    read -r -p "SSH 密钥未配置，是否要生成新的 SSH 密钥对? (y/N): " SETUP_SSH_KEY
+    if [[ "$SETUP_SSH_KEY" == "y" || "$SETUP_SSH_KEY" == "Y" ]]; then
+      log "生成 SSH 密钥对..."
+      ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa -N ""
+      if [[ $? -eq 0 ]]; then
+        log "SSH 密钥对已生成。"
+        log "请将公钥 (~/.ssh/id_rsa.pub) 添加到远程服务器或 Git 托管平台上。"
+        return 0
+      else
+        log "生成 SSH 密钥对失败。"
+        return 1
+      fi
+    else
+      log "跳过生成 SSH 密钥对。"
+      return 0
+    fi
   fi
 }
 
@@ -64,13 +105,13 @@ get_vps_ip() {
 
 # 获取域名和邮箱信息
 ask_for_domain_email() {
-    read -r -p "请输入你的域名 (默认为 fennec-lucky.com): " DOMAIN_INPUT
-    DOMAIN="${DOMAIN_INPUT:-$DOMAIN}"
-    log "使用的域名: $DOMAIN"
+  read -r -p "请输入你的域名 (默认为 fennec-lucky.com): " DOMAIN_INPUT
+  DOMAIN="${DOMAIN_INPUT:-$DOMAIN}"
+  log "使用的域名: $DOMAIN"
 
-    read -r -p "请输入你的邮箱地址 (默认为 stalloneiv@gmail.com): " EMAIL_INPUT
-    EMAIL="${EMAIL_INPUT:-$EMAIL}"
-    log "使用的邮箱: $EMAIL"
+  read -r -p "请输入你的邮箱地址 (默认为 stalloneiv@gmail.com): " EMAIL_INPUT
+  EMAIL="${EMAIL_INPUT:-$EMAIL}"
+  log "使用的邮箱: $EMAIL"
 }
 
 # 检查域名是否指向 VPS IP
@@ -122,30 +163,26 @@ install_docker() {
     log "Docker 和 Docker Compose 已安装."
     return 0
   fi
-
   read -r -p "是否安装 Docker 和 Docker Compose? (y/N): " INSTALL_DOCKER_ANSWER
   if [[ "$INSTALL_DOCKER_ANSWER" == "y" || "$INSTALL_DOCKER_ANSWER" == "Y" ]]; then
     log "开始安装 Docker..."
-
     if update_apt; then
       apt install -y docker.io
       if [[ $? -ne 0 ]]; then
         log "Docker 安装失败。"
         return 1
       fi
-
       log "安装 Docker Compose..."
-      sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-      sudo chmod +x /usr/local/bin/docker-compose
+      curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+      chmod +x /usr/local/bin/docker-compose
       if [[ $? -ne 0 ]]; then
         log "Docker Compose 安装失败。"
         return 1
       fi
-
       log "Docker 和 Docker Compose 安装完成."
       return 0
     else
-      return 1 # apt update 失败
+      return 1
     fi
   else
     log "跳过安装 Docker."
@@ -229,7 +266,7 @@ configure_https() {
 # 配置 Nginx 反向代理
 configure_nginx_proxy() {
   log "配置 Nginx 反向代理..."
-  NGINX_CONFIG="/etc/nginx/sites-available/$DOMAIN"
+  NGINX_CONFIG="/etc/nginx/conf.d/$DOMAIN.conf"
   cat << EOF > "$NGINX_CONFIG"
 server {
     listen 80;
@@ -253,11 +290,9 @@ server {
     }
 }
 EOF
-  ln -s "$NGINX_CONFIG" "/etc/nginx/sites-enabled/"
-  rm -f "/etc/nginx/sites-enabled/default"
   systemctl restart nginx
   if [[ $? -ne 0 ]]; then
-    log "Nginx 反向代理配置失败, 请检查 nginx 日志。"
+    log "Nginx 反向代理配置失败，请检查 Nginx 日志。"
     return 1
   fi
   log "Nginx 反向代理配置完成."
@@ -267,15 +302,15 @@ EOF
 # 创建 docker-compose.yml 文件
 create_docker_compose() {
   log "创建 docker-compose.yml 文件..."
-  cat << EOF > docker-compose.yml
+  cat << EOF > "$DOCKER_COMPOSE_FILE"
 services:
   memos:
     image: ghcr.io/usememos/memos:latest
-    container_name: memos
+    container_name: $CONTAINER_NAME
     ports:
       - "127.0.0.1:${CONTAINER_PORT}:${CONTAINER_PORT}"
     volumes:
-      - ~/.memos:/var/opt/memos
+      - $LOCAL_PATH:/var/opt/memos
     restart: always
 EOF
   log "docker-compose.yml 文件已创建."
@@ -284,12 +319,12 @@ EOF
 # 启动 Memos
 start_memos() {
   log "启动 Memos..."
-  if [ ! -d "~/.memos" ]; then
-    mkdir ~/.memos
+  if [ ! -d "$LOCAL_PATH" ]; then
+    mkdir -p "$LOCAL_PATH"
   fi
-  docker-compose up -d
+  docker-compose -f "$DOCKER_COMPOSE_FILE" up -d
   if [[ $? -ne 0 ]]; then
-    log "Memos 启动失败, 请检查 docker 日志。"
+    log "Memos 启动失败，请检查 Docker 日志。"
     return 1
   fi
   log "Memos 已启动，可通过 https://$DOMAIN 访问."
@@ -298,125 +333,98 @@ start_memos() {
 # 停止 Memos 容器
 stop_memos() {
   log "检查 Memos 容器是否正在运行..."
-    if docker ps | grep -q "$CONTAINER_NAME"; then
-      log "Memos 容器正在运行，正在停止..."
-      # 判断是否是通过 docker-compose 启动的
-      if [ -f "$DOCKER_COMPOSE_FILE" ]; then
-           docker-compose down
-        if [[ $? -ne 0 ]]; then
-          log "停止 docker-compose 项目失败，请检查 Docker 日志。"
-          return 1
-        fi
-      else
-        docker stop "$CONTAINER_NAME"
-        if [[ $? -ne 0 ]]; then
-          log "停止容器 $CONTAINER_NAME 失败，请检查 Docker 日志。"
-           return 1
-        fi
+  if docker ps | grep -q "$CONTAINER_NAME"; then
+    log "Memos 容器正在运行，正在停止..."
+    if [ -f "$DOCKER_COMPOSE_FILE" ]; then
+      docker-compose -f "$DOCKER_COMPOSE_FILE" down
+      if [[ $? -ne 0 ]]; then
+        log "停止 docker-compose 项目失败，请检查 Docker 日志。"
+        return 1
       fi
-
-        log "Memos 容器已停止."
-      else
-        log "Memos 容器未运行."
+    else
+      docker stop "$CONTAINER_NAME"
+      if [[ $? -ne 0 ]]; then
+        log "停止容器 $CONTAINER_NAME 失败，请检查 Docker 日志。"
+        return 1
       fi
-   return 0;
+    fi
+    log "Memos 容器已停止."
+  else
+    log "Memos 容器未运行."
+  fi
+  return 0
 }
 
 # 备份 Memos 数据库
 backup_memos() {
   backup_log "Starting memos backup..."
   stop_memos
-  # 进入本地仓库目录
   cd "$LOCAL_PATH" || {
     backup_log "Error: Could not change directory to $LOCAL_PATH"
     return 1
   }
-
-  # 添加所有更改
-  git add . >> "$BACKUP_LOG" 2>&1
-
-  # 判断是否有更改
+  git add .
   if ! git diff --cached --quiet --exit-code; then
-
-    # 如果有更改，则提交
-    COMMIT_MESSAGE="Auto backup at $(date +"%Y-%m-%d %H:%M:%S")"
+    COMMIT_MESSAGE="Auto backup at $(date +'%Y-%m-%d %H:%M:%S')"
     git commit -m "$COMMIT_MESSAGE" >> "$BACKUP_LOG" 2>&1
-
-    # 推送到远程仓库
-      git push  >> "$BACKUP_LOG" 2>&1
-    if [ $? -eq 0 ]; then
-        backup_log "Backup successful!"
+    git push origin main >> "$BACKUP_LOG" 2>&1
+    if [[ $? -eq 0 ]]; then
+      backup_log "Backup successful!"
     else
-        backup_log "Error: Backup failed, push failed."
-        return 1
+      backup_log "Error: Backup failed, push failed."
+      return 1
     fi
-
   else
-      backup_log "No changes to commit."
+    backup_log "No changes to commit."
   fi
-
-    backup_log "Backup process finished."
-    return 0
+  backup_log "Backup process finished."
+  return 0
 }
 
 # 同步 Memos 数据库
 sync_memos() {
-    update_log "Starting memos sync..."
-    stop_memos
-
-  # 检查本地目录是否存在,如果存在,先删除该目录
+  update_log "Starting memos sync..."
+  stop_memos
   if [ -d "$LOCAL_PATH" ]; then
-    update_log "发现旧的本地数据目录,删除旧的目录: $LOCAL_PATH"
-      rm -rf "$LOCAL_PATH"
-      if [[ $? -ne 0 ]]; then
-        update_log "删除旧的本地数据目录 $LOCAL_PATH 失败."
-        return 1
-      fi
-    update_log "旧的本地数据目录已删除: $LOCAL_PATH"
+    update_log "发现旧的本地数据目录，正在备份旧数据..."
+    mv "$LOCAL_PATH" "${LOCAL_PATH}_backup_$(date +'%Y%m%d%H%M%S')"
   fi
-
-  # 创建本地目录
-  update_log "创建目录: $LOCAL_PATH"
   mkdir -p "$LOCAL_PATH" || {
-      update_log "Error: Failed to create directory $LOCAL_PATH"
-      return 1
+    update_log "Error: Failed to create directory $LOCAL_PATH"
+    return 1
   }
-
-  # 进入本地目录
   cd "$LOCAL_PATH" || {
     update_log "Error: Could not change directory to $LOCAL_PATH"
     return 1
   }
-
-  # 检查本地仓库是否存在
   if [ ! -d ".git" ]; then
     update_log "Cloning repository..."
-    git clone "$SYNC_REPO_URL" .  # 克隆仓库到当前目录
-  elif ! git remote -v | grep -q "$SYNC_REPO_URL"; then # 检查remote origin 是否是 $REPO_URL
+    git clone "$SYNC_REPO_URL" . >> "$UPDATE_LOG" 2>&1
+  elif ! git remote -v | grep -q "$SYNC_REPO_URL"; then
     update_log "Error: Not expected remote repo, exit"
     return 1
   else
-      update_log "Pulling latest changes..."
-      git pull origin main # 拉取最新更改
+    update_log "Pulling latest changes..."
+    git pull origin main >> "$UPDATE_LOG" 2>&1
   fi
-
-  # 检查更新结果
-  if [ $? -eq 0 ]; then
+  if [[ $? -eq 0 ]]; then
     update_log "Update successful!"
   else
     update_log "Error: Update failed!"
     return 1
   fi
-    update_log "Update process finished."
-  return 0
-  docker-compose -f /home/freeluckboy/docker-compose.yml up -d
+  update_log "Update process finished."
+  start_memos
   systemctl restart nginx
-  log "nginx 已刷新"
+  log "Nginx 已刷新"
+  return 0
 }
 
 # 主流程
+disable_ipv6
 get_vps_ip
 ask_for_domain_email
+check_and_setup_ssh_key
 while true; do
   read -r -p "请选择要执行的操作:
   1. 安装 Memos
@@ -424,42 +432,41 @@ while true; do
   3. 同步 Memos 数据库
   4. 退出
   请选择 [1-4]: " CHOICE
-   case "$CHOICE" in
+  case "$CHOICE" in
     1)
-      # 集中更新 apt 仓库
       update_apt
-        if install_git; then
-          log "Git 安装或已存在."
-        fi
-        if install_docker; then
-          log "Docker 安装或已存在."
-            create_docker_compose
-        fi
+      if install_git; then
+        log "Git 安装或已存在."
+      fi
+      if install_docker; then
+        log "Docker 安装或已存在."
+        create_docker_compose
+      fi
       if install_nginx; then
         log "Nginx 安装或已存在."
-          if check_domain_dns; then
-              configure_https
-                if configure_nginx_proxy; then
-                   if install_docker; then # 在配置好 nginx 之后再启动 memos
-                    start_memos
-                   fi
-                fi
+        if check_domain_dns; then
+          configure_https
+          if configure_nginx_proxy; then
+            if install_docker; then
+              start_memos
             fi
+          fi
+        fi
       fi
       systemctl restart nginx
-      log "nginx 已刷新"
-        break;;
-     2)
-       backup_memos
+      log "Nginx 已刷新"
       break;;
-     3)
-        sync_memos
-        break;;
-     4)
-       log "退出脚本."
-        exit 0;;
-     *)
-       log "无效选项，请重新选择。"
+    2)
+      backup_memos
+      break;;
+    3)
+      sync_memos
+      break;;
+    4)
+      log "退出脚本."
+      exit 0;;
+    *)
+      log "无效选项，请重新选择。"
     ;;
   esac
 done
