@@ -68,7 +68,7 @@ update_apt() {
 
 # 检查并配置 SSH 密钥
 check_and_setup_ssh_key() {
-  if [ -f ~/.ssh/id_rsa ] && [ -f ~/.ssh/id_rsa.pub ]; then
+  if [ -f ~/.ssh/id_rsa ] && [ -f ~/.ssh/id_*.pub ]; then
     log "SSH 密钥已配置。"
     return 0
   else
