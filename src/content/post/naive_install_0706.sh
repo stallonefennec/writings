@@ -54,30 +54,20 @@ sudo rm -rf /usr/local/go
 
 # 2. Install the latest Go language environment
 echo "Installing latest Go..."
-# Fetch the latest Go version and download it
 GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
 GO_FILENAME="${GO_LATEST_VERSION}.linux-amd64.tar.gz"
 DOWNLOAD_URL="https://go.dev/dl/${GO_FILENAME}"
-
 echo "Downloading ${DOWNLOAD_URL}"
 curl -L -o "/tmp/${GO_FILENAME}" "${DOWNLOAD_URL}"
-
 echo "Extracting Go..."
 sudo tar -C /usr/local -xzf "/tmp/${GO_FILENAME}"
 rm "/tmp/${GO_FILENAME}"
-
-# Set up Go environment for the build
 export PATH=$PATH:/usr/local/go/bin
-
-# Verify Go installation
 /usr/local/go/bin/go version
 
 # 3. Build Caddy with the forwardproxy plugin using xcaddy
 echo "Building Caddy with forwardproxy plugin..."
-# Install xcaddy
 /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-
-# Build Caddy
 $HOME/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy@caddy2
 
 # 4. Install the new Caddy binary
@@ -87,7 +77,6 @@ sudo chmod +x /usr/bin/caddy
 
 # 5. Set up Caddy user and systemd service
 echo "Setting up Caddy user and service..."
-# Create caddy user and group
 sudo groupadd --system caddy || true
 sudo useradd --system \
     --gid caddy \
@@ -96,12 +85,8 @@ sudo useradd --system \
     --shell /usr/sbin/nologin \
     --comment "Caddy web server" \
     caddy || true
-
-# Create Caddyfile directory if it doesn't exist
 sudo mkdir -p /etc/caddy
 sudo chown -R caddy:caddy /etc/caddy
-
-# Create the Caddyfile using variables
 sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
 {
     order forward_proxy before file_server
@@ -119,8 +104,6 @@ sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
 }
 EOF
 sudo chown caddy:caddy /etc/caddy/Caddyfile
-
-# Create the systemd service file
 sudo tee /etc/systemd/system/caddy.service > /dev/null <<'EOF'
 [Unit]
 Description=Caddy
@@ -157,21 +140,28 @@ else
     echo "Unsupported architecture: $ARCH"
     exit 1
 fi
-
 NAIVE_FILENAME="naiveproxy-${LATEST_VERSION}-${ARCH}.tar.xz"
 DOWNLOAD_URL="https://github.com/klzgrad/naiveproxy/releases/download/${LATEST_VERSION}/${NAIVE_FILENAME}"
-
 echo "Downloading from ${DOWNLOAD_URL}"
 sudo rm -f "/tmp/${NAIVE_FILENAME}"
 sudo curl -L -o "/tmp/${NAIVE_FILENAME}" "${DOWNLOAD_URL}"
-
 sudo tar -xf "/tmp/${NAIVE_FILENAME}" -C /tmp
 sudo mv "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH}/naive" /usr/local/bin/
 sudo chmod +x /usr/local/bin/naive
 
-# 7. Create the file server root directory
+# 7. Create web directory and download content
+echo "Creating web directory and downloading content..."
 sudo mkdir -p /var/www/html
+WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
+WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
+echo "Downloading website content from ${WEBSITE_URL}"
+sudo curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
+echo "Extracting content to /var/www/html/"
+sudo tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
+echo "Setting ownership for web content..."
 sudo chown -R caddy:caddy /var/www/html
+echo "Cleaning up temporary archive..."
+sudo rm "${WEBSITE_ARCHIVE}"
 
 # 8. Reload and start Caddy
 echo "Reloading systemd and starting Caddy..."
