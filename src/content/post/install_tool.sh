@@ -1,18 +1,20 @@
 #!/bin/bash
 
 # ==============================================================================
-#                 One-Click Essentials Installer for Ubuntu
+#           System Repair & Essentials Installer for Debian
 #
-# This script installs and configures:
-#   - Common command-line utilities (curl, wget, htop, etc.)
-#   - The latest version of Git from the official PPA
-#   - The latest version of Docker Engine from the official Docker repository
-#   - The latest version of Docker Compose (v2)
+# This script performs a clean installation of Node.js and Docker.
+# It is specifically designed to fix previous installation issues by:
+#   1. Purging any system-level Node.js/npm packages.
+#   2. Installing nvm (Node Version Manager) for the primary user.
+#   3. Using nvm to install Node.js v20.
+#   4. Installing the latest Docker Engine and Compose for DEBIAN.
+#   5. Configuring Docker to be run by the current user without sudo.
 #
 # Usage:
-#   1. Save this script as install_essentials.sh
-#   2. Make it executable: chmod +x install_essentials.sh
-#   3. Run it: ./install_essentials.sh
+#   1. Save this script as repair_install.sh
+#   2. Make it executable: chmod +x repair_install.sh
+#   3. Run with sudo: sudo ./repair_install.sh
 #
 # ==============================================================================
 
@@ -24,7 +26,7 @@ NC='\033[0m' # No Color
 
 # --- Helper Functions ---
 print_info() {
-    echo -e "${BLUE}[INFO] $1${NC}"
+    echo -e "\n${BLUE}[INFO] $1${NC}"
 }
 
 print_success() {
@@ -36,92 +38,89 @@ print_warning() {
 }
 
 # --- Script Start ---
-# Ensure the script is run with sudo privileges
+# 1. Ensure the script is run with sudo privileges
 if [ "$EUID" -ne 0 ]; then
-  print_warning "This script requires superuser privileges. Re-running with sudo..."
-  sudo "$0" "$@"
-  exit $?
+  print_warning "This script requires superuser privileges. Please run with: sudo ./repair_install.sh"
+  exit 1
 fi
+
+# Get the user who invoked sudo, not root
+TARGET_USER=${SUDO_USER:-$(whoami)}
+TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
 
 # Set non-interactive frontend to avoid prompts during installation
 export DEBIAN_FRONTEND=noninteractive
 
-# 1. Update and Upgrade System Packages
-print_info "Updating package lists and upgrading the system..."
-apt-get update && apt-get upgrade -y
-print_success "System updated and upgraded."
+print_info "Starting system repair for user '$TARGET_USER'..."
 
-# 2. Install Common Command-Line Utilities
-print_info "Installing common utilities (curl, wget, unzip, htop, neofetch, iputils-ping)..."
-apt-get install -y curl wget unzip htop neofetch iputils-ping software-properties-common ca-certificates apt-transport-https
-print_success "Common utilities installed."
-
-# 3. Install Latest Git
-print_info "Adding Git PPA and installing the latest version..."
-add-apt-repository ppa:git-core/ppa -y
-apt-get update
-apt-get install -y git
-print_success "Latest Git installed."
-
-# 4. Install Latest Docker Engine
-print_info "Setting up Docker repository and installing Docker Engine..."
-# Add Docker's official GPG key
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-
-# Add the repository to Apt sources
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
-
-# Install Docker packages
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-print_success "Docker Engine installed."
-
-# 5. Configure Docker for non-root user
-CURRENT_USER=${SUDO_USER:-$(whoami)}
-if id -nG "$CURRENT_USER" | grep -qw "docker"; then
-    print_info "User '$CURRENT_USER' is already in the 'docker' group."
-else
-    print_info "Adding user '$CURRENT_USER' to the 'docker' group..."
-    usermod -aG docker "$CURRENT_USER"
-    print_warning "You need to log out and log back in for the group changes to take effect."
-    print_warning "Alternatively, you can run 'newgrp docker' in your terminal."
-fi
-print_success "Docker non-root user configuration complete."
-
-# 6. Install Docker Compose (Standalone v2) - Optional but recommended
-# This step is technically redundant if docker-compose-plugin was installed, but good for standalone use.
-print_info "Checking/Installing standalone Docker Compose v2..."
-COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
-DOCKER_COMPOSE_PATH="/usr/local/bin/docker-compose"
-if [ -f "$DOCKER_COMPOSE_PATH" ]; then
-    print_info "Standalone docker-compose already exists. Skipping installation."
-else
-    curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o $DOCKER_COMPOSE_PATH
-    chmod +x $DOCKER_COMPOSE_PATH
-    print_success "Standalone Docker Compose v2 installed at $DOCKER_COMPOSE_PATH"
-fi
-
-
-# 7. Clean up
-print_info "Cleaning up apt cache..."
+# --- Section 1: Clean System and Install Node.js via nvm ---
+print_info "Step 1: Removing any system-level Node.js installations..."
+apt-get purge -y nodejs npm
 apt-get autoremove -y
-apt-get clean
-print_success "Cleanup complete."
+print_success "Old Node.js packages have been purged."
 
-# 8. Display Versions
-print_info "Installation summary:"
+print_info "Installing nvm for user '$TARGET_USER'..."
+# Run the nvm install script as the target user
+sudo -u "$TARGET_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+print_success "nvm installed in $TARGET_HOME/.nvm"
+
+print_info "Installing Node.js v20 using nvm..."
+# Source nvm and install Node.js in a subshell as the target user
+sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && nvm install 20"
+print_success "Node.js v20 has been successfully installed."
+
+
+# --- Section 2: Install Docker ---
+print_info "Step 2: Setting up Docker for Debian..."
+
+# Install prerequisite packages
+apt-get install -y ca-certificates curl
+print_success "Prerequisite packages installed."
+
+# Add Docker's official GPG key for Debian
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+print_success "Docker GPG key added."
+
+# Add the Docker repository for Debian
+OS_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+  $OS_CODENAME stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+print_success "Docker repository for Debian ($OS_CODENAME) configured."
+
+# Update package lists and install Docker Engine
+apt-get update
+print_info "Installing Docker Engine, CLI, and Compose plugin..."
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+print_success "Docker has been successfully installed."
+
+
+# --- Section 3: Post-Installation Configuration ---
+print_info "Step 3: Configuring Docker for non-root user '$TARGET_USER'..."
+if id -nG "$TARGET_USER" | grep -qw "docker"; then
+    print_info "User '$TARGET_USER' is already in the 'docker' group."
+else
+    usermod -aG docker "$TARGET_USER"
+    print_success "User '$TARGET_USER' has been added to the 'docker' group."
+fi
+
+# --- Section 4: Final Verification ---
+print_info "Step 4: Installation summary:"
 echo "-------------------------------------"
-git --version
+# Verify nvm-installed node/npm by running the check as the target user
+NODE_VER=$(sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && node -v")
+NPM_VER=$(sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm -v")
+echo "Node version:    $NODE_VER (via nvm)"
+echo "npm version:     $NPM_VER (via nvm)"
+echo -n "Docker version:  "
 docker --version
+echo -n "Compose version: "
 docker compose version
-curl --version | head -n 1
-wget --version | head -n 1
-htop --version | head -n 1
 echo "-------------------------------------"
-print_success "All essential tools have been installed successfully!"
-echo -e "${YELLOW}IMPORTANT: Please log out and log back in to use Docker without sudo.${NC}"
+
+print_success "Repair and installation script finished successfully!"
+print_warning "IMPORTANT: A terminal restart (or logout/login) is required for all changes to take effect."
+print_warning "This is needed for nvm to be available and to use 'docker' without 'sudo'."
