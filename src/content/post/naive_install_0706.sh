@@ -102,6 +102,13 @@ sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
         root /var/www/html
     }
 }
+vaultwarden.${DOMAIN} {
+    reverse_proxy localhost:8080
+}
+
+moon.${DOMAIN} {
+    reverse_proxy localhost:3000
+}
 EOF
 sudo chown caddy:caddy /etc/caddy/Caddyfile
 sudo tee /etc/systemd/system/caddy.service > /dev/null <<'EOF'
