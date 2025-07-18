@@ -5,7 +5,7 @@
 #
 # This script provides a menu-driven interface to:
 #   1. Install/Repair essential tools (Git, Docker, NVM, Node, pnpm, Gemini CLI)
-#   2. Deploy NaiveProxy with a custom-built Caddy
+#   2. Deploy NaiveProxy with a custom-built Caddy (and install Naive client)
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
@@ -115,13 +115,9 @@ install_common_tools() {
     apt-get autoremove -y > /dev/null 2>&1
     print_success "舊的 Node.js 套件已被清除。"
 
-    print_info "Step 1.2: 安裝 Git..."
-    if ! command -v git &> /dev/null; then
-        apt-get install -y git
-        print_success "Git 安裝完成。"
-    else
-        print_info "Git 已經安裝。"
-    fi
+    print_info "Step 1.2: 安裝 Git 和 Netcat..."
+    apt-get install -y git netcat-openbsd
+    print_success "Git 和 Netcat (nc) 已成功安裝。"
 
     print_info "Step 2.1: 為使用者 '$TARGET_USER' 安裝 nvm..."
     sudo -u "$TARGET_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
@@ -136,8 +132,13 @@ install_common_tools() {
     print_success "pnpm 已透過 Corepack 成功安裝。"
 
     print_info "Step 2.4: 安裝 Gemini CLI..."
-    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm install -g @google/gemini-cli"
-    print_success "Google Gemini CLI 已成功安裝。"
+    read -p "是否要安裝 Google Gemini CLI? (y/N): " confirm_gemini
+    if [[ "$confirm_gemini" =~ ^[yY](es)*$ ]]; then
+        sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm install -g @google/gemini-cli"
+        print_success "Google Gemini CLI 已成功安裝。"
+    else
+        print_warning "已跳過安裝 Gemini CLI。"
+    fi
 
     print_info "Step 3: 為 Debian 系統設定 Docker..."
     apt-get install -y ca-certificates curl gnupg
@@ -260,23 +261,50 @@ WantedBy=multi-user.target
 EOF
     print_success "Caddy 系統服務與 Caddyfile 設定完成。"
 
-    print_info "步驟 2.6: 啟動 Caddy 服務..."
+    print_info "步驟 2.6: 啟動 Caddy 服務並下載網站內容..."
     systemctl daemon-reload
     systemctl enable --now caddy
-    echo "Creating web directory and downloading content..."
-    sudo mkdir -p /var/www/html
+    mkdir -p /var/www/html
     WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
     WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
     echo "Downloading website content from ${WEBSITE_URL}"
-    sudo curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
+    curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
     echo "Extracting content to /var/www/html/"
-    sudo tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
+    tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
     echo "Setting ownership for web content..."
-    sudo chown -R caddy:caddy /var/www/html
+    chown -R caddy:caddy /var/www/html
     echo "Cleaning up temporary archive..."
-    sudo rm "${WEBSITE_ARCHIVE}"
-    print_success "NaiveProxy + Caddy 完整部署完成！"
+    rm "${WEBSITE_ARCHIVE}"
+    print_success "Caddy 服務已啟動且網站內容已部署。"
 
+    # --- 【新增功能】安裝 NaiveProxy 客戶端工具 ---
+    print_info "步驟 2.7: 安裝 NaiveProxy 客戶端工具 (naive)..."
+    LATEST_VERSION=$(curl -s "https://api.github.com/repos/klzgrad/naiveproxy/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "x86_64" ]; then
+        ARCH="linux-x64"
+    elif [ "$ARCH" = "aarch64" ]; then
+        ARCH="linux-arm64"
+    else
+        echo "Unsupported architecture for NaiveProxy binary: $ARCH"
+        print_warning "無法安裝 NaiveProxy 客戶端工具。"
+        # Do not exit the whole script, just skip this part
+    fi
+
+    if [ -n "$ARCH" ]; then
+        NAIVE_FILENAME="naiveproxy-${LATEST_VERSION}-${ARCH}.tar.xz"
+        DOWNLOAD_URL="https://github.com/klzgrad/naiveproxy/releases/download/${LATEST_VERSION}/${NAIVE_FILENAME}"
+        echo "正在從 ${DOWNLOAD_URL} 下載"
+        rm -f "/tmp/${NAIVE_FILENAME}"
+        curl -L -o "/tmp/${NAIVE_FILENAME}" "${DOWNLOAD_URL}"
+        tar -xf "/tmp/${NAIVE_FILENAME}" -C /tmp
+        mv "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH}/naive" /usr/local/bin/
+        chmod +x /usr/local/bin/naive
+        rm -rf "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH}"
+        print_success "NaiveProxy 客戶端工具 'naive' 已安裝至 /usr/local/bin/"
+    fi
+
+    print_success "NaiveProxy + Caddy 完整部署完成！"
     echo "您的網站位址: https://${DOMAIN}"
     echo "您的 NaiveProxy 位址: https://${USERNAME}:${PASSWORD}@${DOMAIN}${PROXY_PATH}"
 }
