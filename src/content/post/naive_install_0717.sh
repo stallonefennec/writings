@@ -9,11 +9,6 @@
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
-# Usage:
-#   1. Save this script as deploy.sh
-#   2. Make it executable: chmod +x deploy.sh
-#   3. Run with sudo for full functionality: sudo ./deploy.sh
-#
 # ==============================================================================
 
 # --- Color Definitions ---
@@ -42,7 +37,7 @@ DOMAIN=""
 EMAIL=""
 USERNAME=""
 PASSWORD=""
-PROXY_PATH=""
+PROXY_PATH="" # This variable is kept but will be empty
 CONFIG_SET=false
 
 # --- Function Definitions ---
@@ -79,7 +74,6 @@ interactive_setup() {
     DEFAULT_EMAIL="stalloneiv@gmail.com"
     DEFAULT_USERNAME="stallone"
     DEFAULT_PASSWORD="198964"
-    DEFAULT_PROXY_PATH="/mysecretpath"
 
     read -p "請輸入您的主域名 [${DEFAULT_DOMAIN}]: " CUSTOM_DOMAIN
     DOMAIN=${CUSTOM_DOMAIN:-$DEFAULT_DOMAIN}
@@ -89,8 +83,10 @@ interactive_setup() {
     USERNAME=${CUSTOM_USERNAME:-$DEFAULT_USERNAME}
     read -p "請輸入 NaiveProxy 的密碼 [${DEFAULT_PASSWORD}]: " CUSTOM_PASSWORD
     PASSWORD=${CUSTOM_PASSWORD:-$DEFAULT_PASSWORD}
-    read -p "請輸入 NaiveProxy 的專用代理路徑 [${DEFAULT_PROXY_PATH}]: " CUSTOM_PROXY_PATH
-    PROXY_PATH=${CUSTOM_PROXY_PATH:-$DEFAULT_PROXY_PATH}
+    
+    # --- 【修改點】移除代理路徑的設定 ---
+    PROXY_PATH="" # Explicitly set to empty
+    
     CONFIG_SET=true
     print_success "基本資訊設定完成！"
     echo
@@ -210,11 +206,12 @@ deploy_naiveproxy() {
     print_info "步驟 2.5: 設定 Caddy 系統服務與 Caddyfile..."
     groupadd --system caddy || true
     useradd --system --gid caddy --home-dir /var/lib/caddy --shell /usr/sbin/nologin caddy || true
-    mkdir -p /etc/caddy /var/www/html /var/log/caddy /var/lib/caddy
-    chown -R caddy:caddy /etc/caddy /var/www/html /var/log/caddy /var/lib/caddy
+    mkdir -p /etc/caddy /var/log/caddy
+    chown -R caddy:caddy /etc/caddy /var/log/caddy
     
+    # --- 【修改點】移除 route 和 file_server，讓 forward_proxy 處理所有請求 ---
     tee /etc/caddy/Caddyfile > /dev/null <<EOF
-# This Caddyfile is auto-generated to support both a website and a proxy.
+# This Caddyfile is auto-generated for a dedicated NaiveProxy server.
 
 ${DOMAIN} {
     tls ${EMAIL}
@@ -222,17 +219,9 @@ ${DOMAIN} {
         output file /var/log/caddy/${DOMAIN}.log
     }
 
-    # ROUTE 1: Handle proxy traffic on the dedicated secret path.
-    route ${PROXY_PATH} {
-        forward_proxy {
-            basic_auth ${USERNAME} ${PASSWORD}
-            probe_resistance ${DOMAIN}
-        }
-    }
-
-    # ROUTE 2: Handle all other traffic by serving the website.
-    file_server {
-        root /var/www/html
+    forward_proxy {
+        basic_auth ${USERNAME} ${PASSWORD}
+        probe_resistance
     }
 }
 EOF
@@ -261,21 +250,12 @@ WantedBy=multi-user.target
 EOF
     print_success "Caddy 系統服務與 Caddyfile 設定完成。"
 
-    print_info "步驟 2.6: 啟動 Caddy 服務並下載網站內容..."
+    print_info "步驟 2.6: 啟動 Caddy 服務..."
     systemctl daemon-reload
     systemctl enable --now caddy
-    mkdir -p /var/www/html
-    WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
-    WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
-    echo "Downloading website content from ${WEBSITE_URL}"
-    curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
-    echo "Extracting content to /var/www/html/"
-    tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
-    echo "Setting ownership for web content..."
-    chown -R caddy:caddy /var/www/html
-    echo "Cleaning up temporary archive..."
-    rm "${WEBSITE_ARCHIVE}"
-    print_success "Caddy 服務已啟動且網站內容已部署。"
+    print_success "Caddy 服務已啟動。"
+    
+    # --- 【修改點】移除下載網站內容的步驟 ---
 
     # --- 【新增功能】安裝 NaiveProxy 客戶端工具 ---
     print_info "步驟 2.7: 安裝 NaiveProxy 客戶端工具 (naive)..."
@@ -305,8 +285,8 @@ EOF
     fi
 
     print_success "NaiveProxy + Caddy 完整部署完成！"
-    echo "您的網站位址: https://${DOMAIN}"
-    echo "您的 NaiveProxy 位址: https://${USERNAME}:${PASSWORD}@${DOMAIN}${PROXY_PATH}"
+    # --- 【修改點】移除網站位址，更新 NaiveProxy 位址 ---
+    echo "您的 NaiveProxy 位址: https://${USERNAME}:${PASSWORD}@${DOMAIN}"
 }
 
 # Option 3: Deploy Vaultwarden
