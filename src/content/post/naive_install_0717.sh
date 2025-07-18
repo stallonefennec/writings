@@ -253,7 +253,18 @@ EOF
     print_info "步驟 2.6: 啟動 Caddy 服務..."
     systemctl daemon-reload
     systemctl enable --now caddy
-
+    echo "Creating web directory and downloading content..."
+    sudo mkdir -p /var/www/html
+    WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
+    WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
+    echo "Downloading website content from ${WEBSITE_URL}"
+    sudo curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
+    echo "Extracting content to /var/www/html/"
+    sudo tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
+    echo "Setting ownership for web content..."
+    sudo chown -R caddy:caddy /var/www/html
+    echo "Cleaning up temporary archive..."
+    sudo rm "${WEBSITE_ARCHIVE}"
     print_success "NaiveProxy + Caddy 完整部署完成！"
     echo "您的 NaiveProxy 位址: https://${USERNAME}:${PASSWORD}@${DOMAIN}"
 }
