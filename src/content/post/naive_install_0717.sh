@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-#                      All-in-One Server Deployment Script (v3.3 - Root-Build Fix)
+#                      All-in-One Server Deployment Script (v3.4 - Final & Complete)
 #
 # This script provides a menu-driven interface to:
-#   1. Install/Repair essential tools (Git, Docker, etc.)
-#   2. Deploy NaiveProxy with a custom-built Caddy (Correctly mimics 0706.sh build)
+#   1. Install/Repair essential tools (Git, Docker, NVM, Node, Gemini, etc.)
+#   2. Deploy NaiveProxy with a custom-built Caddy (with root-build fix)
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
@@ -43,7 +43,7 @@ USERNAME=""
 PASSWORD=""
 CONFIG_SET=false
 
-# --- Function Definitions (Menu, Setup, Docker Check, Caddyfile Update are OK) ---
+# --- Function Definitions ---
 
 # Show the main menu
 show_main_menu() {
@@ -54,7 +54,7 @@ show_main_menu() {
     echo -e " 您想執行哪個操作？"
     echo
     echo -e " ${C_YELLOW}1.${C_RESET} 安裝/修復常用工具 (Install/Repair Common Tools)"
-    echo -e "     (Git, Docker, Website)"
+    echo -e "     (Git, Docker, NVM, Node, pnpm, Gemini CLI, Website)"
     echo
     echo -e " ${C_YELLOW}2.${C_RESET} 部署 NaiveProxy + Caddy (包含編譯)"
     echo
@@ -105,9 +105,7 @@ check_docker() {
 # Central function to generate Caddyfile based on running containers
 update_caddyfile() {
     print_info "Generating Caddyfile based on active services..."
-    
-    mkdir -p /etc/caddy
-    mkdir -p /var/log/caddy
+    mkdir -p /etc/caddy /var/log/caddy
 
     tee /etc/caddy/Caddyfile > /dev/null <<EOF
 {
@@ -156,7 +154,6 @@ EOF
     fi
 
     chown -R caddy:caddy /etc/caddy /var/log/caddy
-    
     if systemctl is-active --quiet caddy; then
         print_info "Reloading Caddy service to apply new configuration..."
         systemctl reload caddy
@@ -164,35 +161,73 @@ EOF
     print_success "Caddyfile has been updated."
 }
 
-
+# ==============================================================================
+#            vvv THIS FUNCTION IS NOW RESTORED TO ITS FULL VERSION vvv
+# ==============================================================================
 # Option 1: Install Common Tools
 install_common_tools() {
     print_info "Starting system tools installation..."
+
+    print_info "Step 1.1: Removing any system-level Node.js..."
+    apt-get purge -y nodejs npm > /dev/null 2>&1 || true
+    apt-get autoremove -y > /dev/null 2>&1
+
+    print_info "Step 1.2: Installing base packages (Git, Curl, etc.)..."
     apt-get update
     apt-get install -y git netcat-openbsd curl gnupg ca-certificates
-    print_info "Setting up camouflage website..."
-    mkdir -p /var/www/html
-    WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
-    curl -L -o /tmp/bigdays.tar.gz "${WEBSITE_URL}"
-    tar -xzf /tmp/bigdays.tar.gz -C /var/www/html/
-    rm /tmp/bigdays.tar.gz
-    chown -R www-data:www-data /var/www/html
-    print_success "Camouflage website deployed."
-    print_info "Setting up Docker..."
+
+    print_info "Step 2.1: Installing nvm for user '$TARGET_USER'..."
+    sudo -u "$TARGET_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+
+    print_info "Step 2.2: Installing Node.js v22 via nvm..."
+    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && nvm install 22"
+
+    print_info "Step 2.3: Enabling Corepack and installing pnpm..."
+    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && corepack enable && corepack prepare pnpm@latest --activate"
+
+    print_info "Step 2.4: Installing Gemini CLI..."
+    read -p "Do you want to install Google Gemini CLI? (y/N): " confirm_gemini
+    if [[ "$confirm_gemini" =~ ^[yY](es)*$ ]]; then
+        sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm install -g @google/gemini-cli"
+        print_success "Google Gemini CLI installed."
+    else
+        print_warning "Skipped Gemini CLI installation."
+    fi
+
+    print_info "Step 3: Setting up Docker repository for Debian..."
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     apt-get update
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    print_success "Docker installed."
+
+    print_info "Step 4: Configuring Docker for user '$TARGET_USER' (no sudo)..."
+    if ! getent group docker > /dev/null; then
+        groupadd docker
+    fi
     usermod -aG docker "$TARGET_USER"
-    print_success "Docker installed and user '$TARGET_USER' added to group."
-    print_warning "You may need to log out and back in for Docker group changes to take effect."
+    print_success "User '$TARGET_USER' added to 'docker' group."
+
+    print_info "Step 5: Setting up camouflage website..."
+    mkdir -p /var/www/html
+    WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
+    WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
+    curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
+    tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
+    rm "${WEBSITE_ARCHIVE}"
+    chown -R www-data:www-data /var/www/html
+    print_success "Camouflage website deployed."
+    
+    print_success "Tools installation complete!"
+    print_warning "IMPORTANT: You MUST log out and log back in for all changes (nvm, docker no-sudo) to take effect."
 }
 
 # ==============================================================================
-#          vvv THIS IS THE DEFINITIVE FIX: MIMICKING 0706.sh's SUCCESS vvv
+#            vvv THIS FUNCTION HAS THE PROVEN ROOT-BUILD FIX vvv
 # ==============================================================================
+# Option 2: Deploy NaiveProxy
 deploy_naiveproxy() {
     interactive_setup
 
@@ -212,22 +247,16 @@ deploy_naiveproxy() {
     GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
     GO_FILENAME="${GO_LATEST_VERSION}.linux-amd64.tar.gz"
     DOWNLOAD_URL="https://go.dev/dl/${GO_FILENAME}"
-    print_info "Downloading ${DOWNLOAD_URL}"
     curl -L -o "/tmp/${GO_FILENAME}" "${DOWNLOAD_URL}"
     tar -C /usr/local -xzf "/tmp/${GO_FILENAME}"
     rm "/tmp/${GO_FILENAME}"
     export PATH=$PATH:/usr/local/go/bin
     /usr/local/go/bin/go version
 
-    print_info "Step 3: Building Caddy (as root)..."
-    # Install xcaddy. As root, this goes to /root/go/bin/xcaddy
+    print_info "Step 3: Building Caddy (as root, mimicking 0706.sh)..."
     /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-    
-    # Build Caddy using the xcaddy we just installed.
-    # $HOME is /root, so this path is correct. NO USER SWITCHING!
     print_info "Compiling Caddy using xcaddy from /root/go/bin..."
-    /root/go/bin/xcaddy build \
-        --with github.com/caddyserver/forwardproxy@caddy2
+    /root/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy@caddy2
     
     print_info "Step 4: Installing the new Caddy binary..."
     mv ./caddy /usr/bin/caddy
@@ -236,8 +265,7 @@ deploy_naiveproxy() {
 
     print_info "Step 5: Setting up Caddy user and systemd service..."
     groupadd --system caddy || true
-    useradd --system \
-        --gid caddy --create-home --home-dir /var/lib/caddy \
+    useradd --system --gid caddy --create-home --home-dir /var/lib/caddy \
         --shell /usr/sbin/nologin --comment "Caddy web server" caddy || true
     
     tee /etc/systemd/system/caddy.service > /dev/null <<'EOF'
@@ -246,7 +274,6 @@ Description=Caddy
 Documentation=https://caddyserver.com/docs/
 After=network.target network-online.target
 Requires=network-online.target
-
 [Service]
 Type=notify
 User=caddy
@@ -259,26 +286,16 @@ LimitNPROC=512
 PrivateTmp=true
 ProtectSystem=full
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-
 [Install]
 WantedBy=multi-user.target
 EOF
 
     print_info "Step 6: Downloading and installing NaiveProxy binary..."
-    # This part is fine and was never the problem
     LATEST_VERSION=$(curl -s "https://api.github.com/repos/klzgrad/naiveproxy/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
     ARCH=$(uname -m)
-    if [ "$ARCH" = "x86_64" ]; then
-        ARCH_SUFFIX="linux-x64"
-    elif [ "$ARCH" = "aarch64" ]; then
-        ARCH_SUFFIX="linux-arm64"
-    else
-        print_error "Unsupported architecture: $ARCH"
-        set +e; return 1
-    fi
+    if [ "$ARCH" = "x86_64" ]; then ARCH_SUFFIX="linux-x64"; elif [ "$ARCH" = "aarch64" ]; then ARCH_SUFFIX="linux-arm64"; else print_error "Unsupported architecture: $ARCH"; set +e; return 1; fi
     NAIVE_FILENAME="naiveproxy-${LATEST_VERSION}-${ARCH_SUFFIX}.tar.xz"
     DOWNLOAD_URL="https://github.com/klzgrad/naiveproxy/releases/download/${LATEST_VERSION}/${NAIVE_FILENAME}"
-    print_info "Downloading from ${DOWNLOAD_URL}"
     curl -L -o "/tmp/${NAIVE_FILENAME}" "${DOWNLOAD_URL}"
     tar -xf "/tmp/${NAIVE_FILENAME}" -C /tmp
     mv "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH_SUFFIX}/naive" /usr/local/bin/
@@ -298,12 +315,8 @@ EOF
     systemctl status caddy --no-pager
     set +e 
 }
-# ==============================================================================
-#                 ^^^ REPLACEMENT FUNCTION ENDS HERE ^^^
-# ==============================================================================
 
-
-# Option 3 & 4: Deploy Vaultwarden / MoonTV (unchanged)
+# Option 3 & 4: Deploy Vaultwarden / MoonTV
 deploy_vaultwarden() {
     if ! check_docker; then return; fi
     interactive_setup
