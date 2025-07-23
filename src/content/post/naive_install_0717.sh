@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-#                      All-in-One Server Deployment Script (v3.4 - Final & Complete)
+#                      All-in-One Server Deployment Script (v3.5 - Caddy Fix)
 #
 # This script provides a menu-driven interface to:
 #   1. Install/Repair essential tools (Git, Docker, NVM, Node, Gemini, etc.)
@@ -9,6 +9,10 @@
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
+# Changelog v3.5:
+#   - Fixed Caddy startup failure by ensuring /var/lib/caddy exists with
+#     correct permissions before starting the service. This makes the script
+#     more robust for re-runs.
 # ==============================================================================
 
 # --- Color Definitions ---
@@ -307,6 +311,15 @@ EOF
     update_caddyfile
 
     print_info "Step 8: Setting permissions and starting Caddy..."
+    # >>>>>>>> FIX START <<<<<<<<
+    # Ensure Caddy's data directory exists and has correct permissions.
+    # This is crucial because Step 1 removes it, and Step 5 might not recreate it
+    # if the 'caddy' user already exists, causing TLS cert errors.
+    print_info "Ensuring Caddy's data directory exists with correct permissions..."
+    mkdir -p /var/lib/caddy
+    chown -R caddy:caddy /var/lib/caddy
+    # >>>>>>>> FIX END <<<<<<<<
+
     chown -R caddy:caddy /var/www/html
     systemctl daemon-reload
     systemctl enable --now caddy
