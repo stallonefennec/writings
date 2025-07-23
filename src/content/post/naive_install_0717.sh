@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-#                       All-in-One Server Deployment Script
+#                      All-in-One Server Deployment Script (v2 - Corrected)
 #
 # This script provides a menu-driven interface to:
 #   1. Install/Repair essential tools (Git, Docker, NVM, Node, pnpm, Gemini CLI)
-#   2. Deploy NaiveProxy with a custom-built Caddy (and install Naive client)
+#   2. Deploy NaiveProxy with a custom-built Caddy
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
@@ -32,12 +32,15 @@ print_warning() {
     echo -e "${C_YELLOW}[WARNING] $1${C_RESET}"
 }
 
+print_error() {
+    echo -e "${C_RED}[ERROR] $1${C_RESET}"
+}
+
 # --- Global Variables ---
 DOMAIN=""
 EMAIL=""
 USERNAME=""
 PASSWORD=""
-PROXY_PATH="" # This variable is kept but will be empty
 CONFIG_SET=false
 
 # --- Function Definitions ---
@@ -51,7 +54,7 @@ show_main_menu() {
     echo -e " 您想執行哪個操作？"
     echo
     echo -e " ${C_YELLOW}1.${C_RESET} 安裝/修復常用工具 (Install/Repair Common Tools)"
-    echo -e "     (Git, Docker, NVM, Node, pnpm, Gemini CLI)"
+    echo -e "     (Git, Docker, NVM, Node, pnpm, Gemini CLI, Website)"
     echo
     echo -e " ${C_YELLOW}2.${C_RESET} 部署 NaiveProxy + Caddy (包含編譯)"
     echo
@@ -84,9 +87,6 @@ interactive_setup() {
     read -p "請輸入 NaiveProxy 的密碼 [${DEFAULT_PASSWORD}]: " CUSTOM_PASSWORD
     PASSWORD=${CUSTOM_PASSWORD:-$DEFAULT_PASSWORD}
     
-    # --- 【修改點】移除代理路徑的設定 ---
-    PROXY_PATH="" # Explicitly set to empty
-    
     CONFIG_SET=true
     print_success "基本資訊設定完成！"
     echo
@@ -95,144 +95,189 @@ interactive_setup() {
 # Check if Docker is installed
 check_docker() {
     if ! command -v docker &> /dev/null; then
-        print_warning "Docker 尚未安裝。"
-        print_warning "請先選擇菜單中的 '1. 安裝/修復常用工具' 來安裝 Docker。"
+        print_error "Docker is not installed."
+        print_warning "Please run '1. Install/Repair Common Tools' first to install Docker."
         return 1
     fi
     return 0
 }
 
-# Option 1: Install Common Tools
-install_common_tools() {
-    print_info "開始執行系統工具安裝/修復程序..."
-
-    print_info "Step 1.1: 移除任何系統級的 Node.js..."
-    apt-get purge -y nodejs npm > /dev/null 2>&1 || true
-    apt-get autoremove -y > /dev/null 2>&1
-    print_success "舊的 Node.js 套件已被清除。"
-
-    print_info "Step 1.2: 安裝 Git 和 Netcat..."
-    apt-get install -y git netcat-openbsd
-    print_success "Git 和 Netcat (nc) 已成功安裝。"
-
-    print_info "Step 2.1: 為使用者 '$TARGET_USER' 安裝 nvm..."
-    sudo -u "$TARGET_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
-    print_success "nvm 已安裝於 $TARGET_HOME/.nvm"
-
-    print_info "Step 2.2: 使用 nvm 安裝 Node.js v22..."
-    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && nvm install 22"
-    print_success "Node.js v22 已成功安裝。"
-
-    print_info "Step 2.3: 啟用 Corepack 並安裝 pnpm..."
-    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && corepack enable && corepack prepare pnpm@latest --activate"
-    print_success "pnpm 已透過 Corepack 成功安裝。"
-
-    print_info "Step 2.4: 安裝 Gemini CLI..."
-    read -p "是否要安裝 Google Gemini CLI? (y/N): " confirm_gemini
-    if [[ "$confirm_gemini" =~ ^[yY](es)*$ ]]; then
-        sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm install -g @google/gemini-cli"
-        print_success "Google Gemini CLI 已成功安裝。"
-    else
-        print_warning "已跳過安裝 Gemini CLI。"
+# #[REFACTORED] Central function to generate Caddyfile based on running containers
+update_caddyfile() {
+    print_info "Generating Caddyfile based on active services..."
+    
+    # Ensure base Caddy user and directories exist
+    if ! getent group caddy > /dev/null; then
+        groupadd --system caddy
     fi
-
-    print_info "Step 3: 為 Debian 系統設定 Docker..."
-    apt-get install -y ca-certificates curl gnupg
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    chmod a+r /etc/apt/keyrings/docker.gpg
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-    print_info "正在安裝 Docker Engine, CLI, 和 Compose plugin..."
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    print_success "Docker 已成功安裝。"
-
-    print_info "Step 4: 為使用者 '$TARGET_USER' 設定 Docker 免 sudo..."
-    if ! getent group docker > /dev/null; then
-        groupadd docker
-        print_success "已創建 'docker' 群組。"
+    if ! id -u caddy > /dev/null 2>&1; then
+        useradd --system \
+            --gid caddy --create-home --home-dir /var/lib/caddy \
+            --shell /usr/sbin/nologin --comment "Caddy web server" caddy
     fi
-    usermod -aG docker "$TARGET_USER"
-    print_success "使用者 '$TARGET_USER' 已被加入 'docker' 群組。"
+    mkdir -p /etc/caddy
+    mkdir -p /var/log/caddy
 
-    print_success "工具安裝/修復程序已完成！"
-    print_warning "重要：需要重新登入終端機才能讓所有變更生效 (nvm 和 docker 免 sudo)。"
+    # Start with the base Caddyfile content
+    cat > /etc/caddy/Caddyfile <<EOF
+{
+    order forward_proxy before file_server
 }
 
-# Option 2: Deploy NaiveProxy + Caddy (Full version)
-deploy_naiveproxy() {
-    interactive_setup
-    print_info "--- 開始完整部署 NaiveProxy + Caddy ---"
-
-    print_info "步驟 2.1: 清理舊的 Caddy 和 Go 安裝..."
-    if systemctl is-active --quiet caddy.service; then
-        systemctl stop caddy
-    fi
-    apt-get purge -y caddy golang-go > /dev/null 2>&1 || true
-    apt-get autoremove -y > /dev/null 2>&1
-    rm -rf /usr/local/go
-    print_success "舊環境已清理完畢。"
-
-    print_info "步驟 2.2: 安裝最新的 Go 語言環境..."
-    GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
-    GO_FILENAME="${GO_LATEST_VERSION}.linux-amd64.tar.gz"
-    DOWNLOAD_URL="https://go.dev/dl/${GO_FILENAME}"
-    echo "正在下載 ${DOWNLOAD_URL}"
-    curl -L -o "/tmp/${GO_FILENAME}" "${DOWNLOAD_URL}"
-    tar -C /usr/local -xzf "/tmp/${GO_FILENAME}"
-    rm "/tmp/${GO_FILENAME}"
-    # 永久性地設定 Go 的 PATH
-    if [ ! -f "/etc/profile.d/go.sh" ]; then
-        echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
-    fi
-    source /etc/profile.d/go.sh
-    print_success "Go 已成功安裝。 $(go version)"
-
-    print_info "步驟 2.3: 編譯包含 forwardproxy 插件的 Caddy..."
-    export GOPATH=/root/go
-    /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-    $GOPATH/bin/xcaddy build --with github.com/caddyserver/forwardproxy@caddy2
-    print_success "Caddy 編譯成功。"
-
-    print_info "步驟 2.4: 安裝 Caddy 二進位檔..."
-    mv ./caddy /usr/bin/caddy
-    chmod +x /usr/bin/caddy
-    print_success "Caddy 已安裝至 /usr/bin/caddy。"
-
-    print_info "步驟 2.5: 設定 Caddy 系統服務與 Caddyfile..."
-    groupadd --system caddy || true
-    useradd --system --gid caddy --home-dir /var/lib/caddy --shell /usr/sbin/nologin caddy || true
-    mkdir -p /etc/caddy /var/log/caddy
-    chown -R caddy:caddy /etc/caddy /var/log/caddy
-    
-    # --- 【修改點】移除 route 和 file_server，讓 forward_proxy 處理所有請求 ---
-    tee /etc/caddy/Caddyfile > /dev/null <<EOF
-# This Caddyfile is auto-generated for a dedicated NaiveProxy server.
-
-${DOMAIN} {
+:443, ${DOMAIN} {
     tls ${EMAIL}
-    log {
-        output file /var/log/caddy/${DOMAIN}.log
-    }
-
     forward_proxy {
         basic_auth ${USERNAME} ${PASSWORD}
         probe_resistance
     }
+    file_server {
+        root /var/www/html
+    }
+    log {
+        output file /var/log/caddy/main.${DOMAIN}.log
+    }
 }
 EOF
-    chown caddy:caddy /etc/caddy/Caddyfile
 
+    # Check if Vaultwarden container is running and add its config
+    if docker ps -q --filter "name=vaultwarden" | grep -q .; then
+        print_info "Vaultwarden container found. Adding to Caddyfile."
+        cat >> /etc/caddy/Caddyfile <<EOF
+
+vaultwarden.${DOMAIN} {
+    reverse_proxy localhost:8080
+    log {
+        output file /var/log/caddy/vaultwarden.${DOMAIN}.log
+    }
+}
+EOF
+    fi
+
+    # Check if MoonTV container is running and add its config
+    if docker ps -q --filter "name=moontv" | grep -q .; then
+        print_info "MoonTV container found. Adding to Caddyfile."
+        cat >> /etc/caddy/Caddyfile <<EOF
+
+moon.${DOMAIN} {
+    reverse_proxy localhost:3000
+    log {
+        output file /var/log/caddy/moon.${DOMAIN}.log
+    }
+}
+EOF
+    fi
+
+    chown -R caddy:caddy /etc/caddy /var/log/caddy
+    
+    if systemctl list-units --type=service | grep -q caddy.service; then
+        print_info "Reloading Caddy service..."
+        systemctl reload caddy
+    fi
+    print_success "Caddyfile has been updated."
+}
+
+
+# Option 1: Install Common Tools
+install_common_tools() {
+    print_info "Starting system tools installation..."
+
+    print_info "Step 1.1: Removing any system-level Node.js..."
+    apt-get purge -y nodejs npm > /dev/null 2>&1 || true
+    apt-get autoremove -y > /dev/null 2>&1
+
+    print_info "Step 1.2: Installing Git and Netcat..."
+    apt-get update
+    apt-get install -y git netcat-openbsd
+
+    print_info "Step 2.1: Installing nvm for user '$TARGET_USER'..."
+    sudo -u "$TARGET_USER" bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash'
+
+    print_info "Step 2.2: Installing Node.js v22 via nvm..."
+    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && nvm install 22"
+
+    print_info "Step 2.3: Enabling Corepack and installing pnpm..."
+    sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && corepack enable && corepack prepare pnpm@latest --activate"
+
+    print_info "Step 2.4: Installing Gemini CLI..."
+    read -p "Do you want to install Google Gemini CLI? (y/N): " confirm_gemini
+    if [[ "$confirm_gemini" =~ ^[yY](es)*$ ]]; then
+        sudo -u "$TARGET_USER" bash -c "source $TARGET_HOME/.nvm/nvm.sh && npm install -g @google/gemini-cli"
+        print_success "Google Gemini CLI installed."
+    else
+        print_warning "Skipped Gemini CLI installation."
+    fi
+
+    print_info "Step 3: Setting up Docker repository for Debian..."
+    apt-get install -y ca-certificates curl gnupg
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    print_success "Docker installed."
+
+    print_info "Step 4: Configuring Docker for user '$TARGET_USER' (no sudo)..."
+    if ! getent group docker > /dev/null; then
+        groupadd docker
+    fi
+    usermod -aG docker "$TARGET_USER"
+    print_success "User '$TARGET_USER' added to 'docker' group."
+
+    print_info "Step 5: Setting up camouflage website..."
+    mkdir -p /var/www/html
+    WEBSITE_URL="https://raw.githubusercontent.com/stallonefennec/writings/main/src/content/post/bigdays.tar.gz"
+    WEBSITE_ARCHIVE="/tmp/bigdays.tar.gz"
+    curl -L -o "${WEBSITE_ARCHIVE}" "${WEBSITE_URL}"
+    tar -xzf "${WEBSITE_ARCHIVE}" -C /var/www/html/
+    rm "${WEBSITE_ARCHIVE}"
+    chown -R www-data:www-data /var/www/html # Use www-data as a safe default for now
+    print_success "Camouflage website deployed."
+    
+    print_success "Tools installation complete!"
+    print_warning "IMPORTANT: You MUST log out and log back in for all changes (nvm, docker no-sudo) to take effect."
+}
+
+# #[FIXED] All NaiveProxy/Caddy logic is now correctly inside this function
+deploy_naiveproxy() {
+    interactive_setup
+
+    print_info "Starting NaiveProxy and Caddy installation..."
+
+    print_info "Step 1: Uninstalling existing Caddy and old Go..."
+    if systemctl list-units --type=service | grep -q caddy.service; then
+        systemctl stop caddy || true
+    fi
+    apt-get purge -y caddy golang-go > /dev/null 2>&1
+    apt-get autoremove -y > /dev/null 2>&1
+    rm -rf /usr/local/go
+
+    print_info "Step 2: Installing latest Go..."
+    GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
+    GO_FILENAME="${GO_LATEST_VERSION}.linux-amd64.tar.gz"
+    DOWNLOAD_URL="https://go.dev/dl/${GO_FILENAME}"
+    curl -L -o "/tmp/${GO_FILENAME}" "${DOWNLOAD_URL}"
+    tar -C /usr/local -xzf "/tmp/${GO_FILENAME}"
+    rm "/tmp/${GO_FILENAME}"
+    
+    print_info "Step 3: Building Caddy with forwardproxy plugin..."
+    /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+    sudo -u "$TARGET_USER" bash -c "PATH=$PATH:/usr/local/go/bin $TARGET_HOME/go/bin/xcaddy build --with github.com/caddyserver/forwardproxy"
+    mv "$TARGET_HOME/caddy" ./caddy
+    
+    print_info "Step 4: Installing the new Caddy binary..."
+    mv ./caddy /usr/bin/caddy
+    chmod +x /usr/bin/caddy
+    setcap cap_net_bind_service=+ep /usr/bin/caddy
+
+    print_info "Step 5: Setting up Caddy systemd service..."
     tee /etc/systemd/system/caddy.service > /dev/null <<'EOF'
 [Unit]
 Description=Caddy
 Documentation=https://caddyserver.com/docs/
 After=network.target network-online.target
 Requires=network-online.target
+
 [Service]
 Type=notify
 User=caddy
@@ -245,60 +290,31 @@ LimitNPROC=512
 PrivateTmp=true
 ProtectSystem=full
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+
 [Install]
 WantedBy=multi-user.target
 EOF
-    print_success "Caddy 系統服務與 Caddyfile 設定完成。"
 
-    print_info "步驟 2.6: 啟動 Caddy 服務..."
+    print_info "Step 6: Generating initial Caddyfile..."
+    update_caddyfile # This will create the file with the correct base config
+
+    print_info "Step 7: Reloading systemd and starting Caddy..."
     systemctl daemon-reload
     systemctl enable --now caddy
-    print_success "Caddy 服務已啟動。"
     
-    # --- 【修改點】移除下載網站內容的步驟 ---
-
-    # --- 【新增功能】安裝 NaiveProxy 客戶端工具 ---
-    print_info "步驟 2.7: 安裝 NaiveProxy 客戶端工具 (naive)..."
-    LATEST_VERSION=$(curl -s "https://api.github.com/repos/klzgrad/naiveproxy/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
-    ARCH=$(uname -m)
-    if [ "$ARCH" = "x86_64" ]; then
-        ARCH="linux-x64"
-    elif [ "$ARCH" = "aarch64" ]; then
-        ARCH="linux-arm64"
-    else
-        echo "Unsupported architecture for NaiveProxy binary: $ARCH"
-        print_warning "無法安裝 NaiveProxy 客戶端工具。"
-        # Do not exit the whole script, just skip this part
-    fi
-
-    if [ -n "$ARCH" ]; then
-        NAIVE_FILENAME="naiveproxy-${LATEST_VERSION}-${ARCH}.tar.xz"
-        DOWNLOAD_URL="https://github.com/klzgrad/naiveproxy/releases/download/${LATEST_VERSION}/${NAIVE_FILENAME}"
-        echo "正在從 ${DOWNLOAD_URL} 下載"
-        rm -f "/tmp/${NAIVE_FILENAME}"
-        curl -L -o "/tmp/${NAIVE_FILENAME}" "${DOWNLOAD_URL}"
-        tar -xf "/tmp/${NAIVE_FILENAME}" -C /tmp
-        mv "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH}/naive" /usr/local/bin/
-        chmod +x /usr/local/bin/naive
-        rm -rf "/tmp/naiveproxy-${LATEST_VERSION}-${ARCH}"
-        print_success "NaiveProxy 客戶端工具 'naive' 已安裝至 /usr/local/bin/"
-    fi
-
-    print_success "NaiveProxy + Caddy 完整部署完成！"
-    # --- 【修改點】移除網站位址，更新 NaiveProxy 位址 ---
-    echo "您的 NaiveProxy 位址: https://${USERNAME}:${PASSWORD}@${DOMAIN}"
+    print_success "Caddy installation and setup complete."
+    systemctl status caddy --no-pager
 }
 
 # Option 3: Deploy Vaultwarden
 deploy_vaultwarden() {
     if ! check_docker; then return; fi
     interactive_setup
-    print_info "開始部署 Vaultwarden..."
+    print_info "Deploying Vaultwarden..."
     local DEPLOY_DIR="$TARGET_HOME/docker_deploys/vaultwarden"
     sudo -u "$TARGET_USER" mkdir -p "${DEPLOY_DIR}/data"
 
     sudo -u "$TARGET_USER" tee "${DEPLOY_DIR}/docker-compose.yml" > /dev/null <<EOF
-version: '3'
 services:
   vaultwarden:
     image: vaultwarden/server:latest
@@ -310,35 +326,19 @@ services:
       - ./data:/data
 EOF
 
-    print_info "正在啟動 Vaultwarden 容器..."
-    (cd "${DEPLOY_DIR}" && docker compose up -d)
+    print_info "Starting Vaultwarden container..."
+    (cd "${DEPLOY_DIR}" && sudo -u "$TARGET_USER" docker compose up -d)
 
-    print_info "正在更新 Caddy 設定..."
-    # Check if the block already exists to prevent duplicates
-    if ! grep -q "vaultwarden.${DOMAIN}" /etc/caddy/Caddyfile; then
-        tee -a /etc/caddy/Caddyfile > /dev/null <<EOF
-
-# --- Vaultwarden Service ---
-vaultwarden.${DOMAIN} {
-    tls ${EMAIL}
-    reverse_proxy localhost:8080
-    log {
-        output file /var/log/caddy/vaultwarden.${DOMAIN}.log
-    }
-}
-EOF
-        systemctl reload caddy
-        print_success "Vaultwarden 已部署！位址: https://vaultwarden.${DOMAIN}"
-    else
-        print_warning "Vaultwarden 的 Caddy 設定已存在，跳過更新。"
-    fi
+    print_info "Updating Caddy configuration..."
+    update_caddyfile
+    print_success "Vaultwarden deployed! Access at: https://vaultwarden.${DOMAIN}"
 }
 
 # Option 4: Deploy MoonTV
 deploy_moontv() {
     if ! check_docker; then return; fi
     interactive_setup
-    print_info "開始部署 MoonTV..."
+    print_info "Deploying MoonTV..."
     local DEPLOY_DIR="$TARGET_HOME/docker_deploys/moontv"
     sudo -u "$TARGET_USER" mkdir -p "${DEPLOY_DIR}"
 
@@ -354,34 +354,19 @@ services:
       - PASSWORD=moontv
 EOF
 
-    print_info "正在啟動 MoonTV 容器..."
-    (cd "${DEPLOY_DIR}" && docker compose up -d)
+    print_info "Starting MoonTV container..."
+    (cd "${DEPLOY_DIR}" && sudo -u "$TARGET_USER" docker compose up -d)
 
-    print_info "正在更新 Caddy 設定..."
-    if ! grep -q "moon.${DOMAIN}" /etc/caddy/Caddyfile; then
-        tee -a /etc/caddy/Caddyfile > /dev/null <<EOF
-
-# --- MoonTV Service ---
-moon.${DOMAIN} {
-    tls ${EMAIL}
-    reverse_proxy localhost:3000
-    log {
-        output file /var/log/caddy/moon.${DOMAIN}.log
-    }
-}
-EOF
-        systemctl reload caddy
-        print_success "MoonTV 已部署！位址: https://moon.${DOMAIN}"
-    else
-        print_warning "MoonTV 的 Caddy 設定已存在，跳過更新。"
-    fi
+    print_info "Updating Caddy configuration..."
+    update_caddyfile
+    print_success "MoonTV deployed! Access at: https://moon.${DOMAIN}"
 }
 
 # --- Main Logic ---
 
 # 1. Ensure the script is run with sudo privileges
 if [ "$EUID" -ne 0 ]; then
-    print_warning "此腳本需要超級使用者權限。請使用 'sudo' 來運行。"
+    print_error "This script requires superuser privileges. Please run with 'sudo'."
     exit 1
 fi
 
@@ -389,7 +374,7 @@ fi
 TARGET_USER=${SUDO_USER:-$(whoami)}
 TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
 
-# Set non-interactive frontend to avoid prompts
+# Set non-interactive frontend to avoid prompts during apt installs
 export DEBIAN_FRONTEND=noninteractive
 
 # Main menu loop
@@ -411,12 +396,12 @@ while true; do
             deploy_moontv
             ;;
         5)
-            echo "正在退出腳本。再見！"
+            echo "Exiting script. Goodbye!"
             break
             ;;
         *)
-            print_warning "無效的選擇，請重新輸入。"
+            print_warning "Invalid choice, please try again."
             ;;
     esac
-    read -p "按 Enter 鍵返回主菜單..."
+    read -p "Press Enter to return to the main menu..."
 done
