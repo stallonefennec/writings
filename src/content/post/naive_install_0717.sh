@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-#                      All-in-One Server Deployment Script (v3.2 - Permission Fix)
+#                      All-in-One Server Deployment Script (v3.3 - Root-Build Fix)
 #
 # This script provides a menu-driven interface to:
 #   1. Install/Repair essential tools (Git, Docker, etc.)
-#   2. Deploy NaiveProxy with a custom-built Caddy (with permission fixes)
+#   2. Deploy NaiveProxy with a custom-built Caddy (Correctly mimics 0706.sh build)
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
@@ -43,7 +43,7 @@ USERNAME=""
 PASSWORD=""
 CONFIG_SET=false
 
-# --- Function Definitions ---
+# --- Function Definitions (Menu, Setup, Docker Check, Caddyfile Update are OK) ---
 
 # Show the main menu
 show_main_menu() {
@@ -191,13 +191,13 @@ install_common_tools() {
 }
 
 # ==============================================================================
-#                 vvv THIS FUNCTION IS REPLACED & OPTIMIZED vvv
+#          vvv THIS IS THE DEFINITIVE FIX: MIMICKING 0706.sh's SUCCESS vvv
 # ==============================================================================
 deploy_naiveproxy() {
     interactive_setup
 
     print_info "Starting NaiveProxy and Caddy installation..."
-    set -e # Stop on any error during this critical installation
+    set -e 
 
     print_info "Step 1: Uninstalling existing Caddy and old Go..."
     if systemctl list-units --type=service | grep -q caddy.service; then
@@ -206,9 +206,9 @@ deploy_naiveproxy() {
     fi
     apt-get purge -y caddy golang-go > /dev/null 2>&1
     apt-get autoremove -y > /dev/null 2>&1
-    rm -rf /usr/local/go /usr/bin/caddy /etc/caddy /var/lib/caddy /etc/systemd/system/caddy.service /usr/local/bin/xcaddy
+    rm -rf /usr/local/go /usr/bin/caddy /etc/caddy /var/lib/caddy /etc/systemd/system/caddy.service /usr/local/bin/xcaddy /root/go
 
-    print_info "Step 2: Installing latest Go..."
+    print_info "Step 2: Installing latest Go (as root)..."
     GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
     GO_FILENAME="${GO_LATEST_VERSION}.linux-amd64.tar.gz"
     DOWNLOAD_URL="https://go.dev/dl/${GO_FILENAME}"
@@ -219,19 +219,18 @@ deploy_naiveproxy() {
     export PATH=$PATH:/usr/local/go/bin
     /usr/local/go/bin/go version
 
-    print_info "Step 3: Building Caddy with forwardproxy plugin..."
-    # Install xcaddy to a global path (/usr/local/bin) so any user can execute it
-    print_info "Installing xcaddy to /usr/local/bin..."
-    GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+    print_info "Step 3: Building Caddy (as root)..."
+    # Install xcaddy. As root, this goes to /root/go/bin/xcaddy
+    /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
     
-    # Now, build Caddy. We no longer need to switch user for this.
-    # Building as root is fine, as long as we move the binary to the correct place.
-    print_info "Compiling Caddy... this may take a moment."
-    xcaddy build \
-        --with github.com/caddyserver/forwardproxy@caddy2 \
-        --output /usr/bin/caddy
+    # Build Caddy using the xcaddy we just installed.
+    # $HOME is /root, so this path is correct. NO USER SWITCHING!
+    print_info "Compiling Caddy using xcaddy from /root/go/bin..."
+    /root/go/bin/xcaddy build \
+        --with github.com/caddyserver/forwardproxy@caddy2
     
-    print_info "Step 4: Setting permissions for the new Caddy binary..."
+    print_info "Step 4: Installing the new Caddy binary..."
+    mv ./caddy /usr/bin/caddy
     chmod +x /usr/bin/caddy
     setcap cap_net_bind_service=+ep /usr/bin/caddy
 
@@ -266,6 +265,7 @@ WantedBy=multi-user.target
 EOF
 
     print_info "Step 6: Downloading and installing NaiveProxy binary..."
+    # This part is fine and was never the problem
     LATEST_VERSION=$(curl -s "https://api.github.com/repos/klzgrad/naiveproxy/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
     ARCH=$(uname -m)
     if [ "$ARCH" = "x86_64" ]; then
@@ -274,8 +274,7 @@ EOF
         ARCH_SUFFIX="linux-arm64"
     else
         print_error "Unsupported architecture: $ARCH"
-        set +e
-        return 1
+        set +e; return 1
     fi
     NAIVE_FILENAME="naiveproxy-${LATEST_VERSION}-${ARCH_SUFFIX}.tar.xz"
     DOWNLOAD_URL="https://github.com/klzgrad/naiveproxy/releases/download/${LATEST_VERSION}/${NAIVE_FILENAME}"
@@ -297,31 +296,28 @@ EOF
     
     print_success "Caddy & NaiveProxy (forwardproxy) installation complete."
     systemctl status caddy --no-pager
-    set +e # Re-enable error tolerance for the rest of the menu
+    set +e 
 }
 # ==============================================================================
 #                 ^^^ REPLACEMENT FUNCTION ENDS HERE ^^^
 # ==============================================================================
 
 
-# Option 3: Deploy Vaultwarden
+# Option 3 & 4: Deploy Vaultwarden / MoonTV (unchanged)
 deploy_vaultwarden() {
     if ! check_docker; then return; fi
     interactive_setup
     print_info "Deploying Vaultwarden..."
     local DEPLOY_DIR="$TARGET_HOME/docker_deploys/vaultwarden"
     sudo -u "$TARGET_USER" mkdir -p "${DEPLOY_DIR}/data"
-
     sudo -u "$TARGET_USER" tee "${DEPLOY_DIR}/docker-compose.yml" > /dev/null <<EOF
 services:
   vaultwarden:
     image: vaultwarden/server:latest
     container_name: vaultwarden
     restart: always
-    ports:
-      - "127.0.0.1:8080:80"
-    volumes:
-      - ./data:/data
+    ports: ["127.0.0.1:8080:80"]
+    volumes: ["./data:/data"]
 EOF
     print_info "Starting Vaultwarden container..."
     (cd "${DEPLOY_DIR}" && sudo -u "$TARGET_USER" docker compose up -d)
@@ -330,7 +326,6 @@ EOF
     print_success "Vaultwarden deployed! Access at: https://vaultwarden.${DOMAIN}"
 }
 
-# Option 4: Deploy MoonTV
 deploy_moontv() {
     if ! check_docker; then return; fi
     interactive_setup
@@ -343,10 +338,8 @@ services:
     image: ghcr.io/senshinya/moontv:latest
     container_name: moontv
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:3000:3000'
-    environment:
-      - PASSWORD=moontv
+    ports: ['127.0.0.1:3000:3000']
+    environment: [PASSWORD=moontv]
 EOF
     print_info "Starting MoonTV container..."
     (cd "${DEPLOY_DIR}" && sudo -u "$TARGET_USER" docker compose up -d)
