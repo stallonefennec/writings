@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ==============================================================================
-#                      All-in-One Server Deployment Script (v3.1 - Robust Build)
+#                      All-in-One Server Deployment Script (v3.2 - Permission Fix)
 #
 # This script provides a menu-driven interface to:
-#   1. Install/Repair essential tools (Git, Docker, NVM, Node, pnpm, Gemini CLI)
-#   2. Deploy NaiveProxy with a custom-built Caddy (using robust 0706.sh logic)
+#   1. Install/Repair essential tools (Git, Docker, etc.)
+#   2. Deploy NaiveProxy with a custom-built Caddy (with permission fixes)
 #   3. Deploy Vaultwarden via Docker
 #   4. Deploy MoonTV via Docker
 #
@@ -54,7 +54,7 @@ show_main_menu() {
     echo -e " 您想執行哪個操作？"
     echo
     echo -e " ${C_YELLOW}1.${C_RESET} 安裝/修復常用工具 (Install/Repair Common Tools)"
-    echo -e "     (Git, Docker, NVM, Node, pnpm, Gemini CLI, Website)"
+    echo -e "     (Git, Docker, Website)"
     echo
     echo -e " ${C_YELLOW}2.${C_RESET} 部署 NaiveProxy + Caddy (包含編譯)"
     echo
@@ -106,11 +106,9 @@ check_docker() {
 update_caddyfile() {
     print_info "Generating Caddyfile based on active services..."
     
-    # Ensure Caddy user and directories exist from the main installer
     mkdir -p /etc/caddy
     mkdir -p /var/log/caddy
 
-    # Start with the base Caddyfile content
     tee /etc/caddy/Caddyfile > /dev/null <<EOF
 {
     order forward_proxy before file_server
@@ -131,7 +129,6 @@ update_caddyfile() {
 }
 EOF
 
-    # Check if Vaultwarden container is running and add its config
     if docker ps -q --filter "name=vaultwarden" | grep -q .; then
         print_info "Vaultwarden container found. Adding to Caddyfile."
         cat >> /etc/caddy/Caddyfile <<EOF
@@ -145,7 +142,6 @@ vaultwarden.${DOMAIN} {
 EOF
     fi
 
-    # Check if MoonTV container is running and add its config
     if docker ps -q --filter "name=moontv" | grep -q .; then
         print_info "MoonTV container found. Adding to Caddyfile."
         cat >> /etc/caddy/Caddyfile <<EOF
@@ -171,7 +167,6 @@ EOF
 
 # Option 1: Install Common Tools
 install_common_tools() {
-    # (The content of this function is unchanged and correct)
     print_info "Starting system tools installation..."
     apt-get update
     apt-get install -y git netcat-openbsd curl gnupg ca-certificates
@@ -211,7 +206,7 @@ deploy_naiveproxy() {
     fi
     apt-get purge -y caddy golang-go > /dev/null 2>&1
     apt-get autoremove -y > /dev/null 2>&1
-    rm -rf /usr/local/go /usr/bin/caddy /etc/caddy /var/lib/caddy /etc/systemd/system/caddy.service
+    rm -rf /usr/local/go /usr/bin/caddy /etc/caddy /var/lib/caddy /etc/systemd/system/caddy.service /usr/local/bin/xcaddy
 
     print_info "Step 2: Installing latest Go..."
     GO_LATEST_VERSION=$(curl -s "https://go.dev/VERSION?m=text" | head -n 1)
@@ -221,21 +216,22 @@ deploy_naiveproxy() {
     curl -L -o "/tmp/${GO_FILENAME}" "${DOWNLOAD_URL}"
     tar -C /usr/local -xzf "/tmp/${GO_FILENAME}"
     rm "/tmp/${GO_FILENAME}"
-    # Temporarily add Go to PATH for this session
     export PATH=$PATH:/usr/local/go/bin
     /usr/local/go/bin/go version
 
     print_info "Step 3: Building Caddy with forwardproxy plugin..."
-    /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+    # Install xcaddy to a global path (/usr/local/bin) so any user can execute it
+    print_info "Installing xcaddy to /usr/local/bin..."
+    GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
     
-    # Build as the target user to avoid permission issues, but specify a clear output path
+    # Now, build Caddy. We no longer need to switch user for this.
+    # Building as root is fine, as long as we move the binary to the correct place.
     print_info "Compiling Caddy... this may take a moment."
-    sudo -u "$TARGET_USER" bash -c "PATH=$PATH:/usr/local/go/bin $HOME/go/bin/xcaddy build \
+    xcaddy build \
         --with github.com/caddyserver/forwardproxy@caddy2 \
-        --output /tmp/caddy_compiled"
+        --output /usr/bin/caddy
     
-    print_info "Step 4: Installing the new Caddy binary..."
-    mv /tmp/caddy_compiled /usr/bin/caddy
+    print_info "Step 4: Setting permissions for the new Caddy binary..."
     chmod +x /usr/bin/caddy
     setcap cap_net_bind_service=+ep /usr/bin/caddy
 
@@ -292,7 +288,7 @@ EOF
     print_success "NaiveProxy binary installed to /usr/local/bin/naive"
 
     print_info "Step 7: Generating Caddyfile..."
-    update_caddyfile # Use the dynamic Caddyfile generator
+    update_caddyfile
 
     print_info "Step 8: Setting permissions and starting Caddy..."
     chown -R caddy:caddy /var/www/html
