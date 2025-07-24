@@ -226,6 +226,10 @@ install_common_tools() {
     
     print_success "Tools installation complete!"
     print_warning "IMPORTANT: You MUST log out and log back in for all changes (nvm, docker no-sudo) to take effect."
+    print_info "Step 6: installing ncdu..."
+    sudo apt update
+    sudo apt install ncdu
+    print_success "ncdu deployed."
 }
 
 # ==============================================================================
